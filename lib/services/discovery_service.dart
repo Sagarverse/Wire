@@ -58,7 +58,7 @@ class DiscoveryService {
       }
     });
 
-    _timer = Timer.periodic(broadcastInterval, (_) {
+    _timer = Timer.periodic(broadcastInterval, (_) async {
       try {
         if (_socket == null) return;
         final payload = jsonEncode({
@@ -66,10 +66,16 @@ class DiscoveryService {
           'deviceId': deviceId,
           'wsPort': wsPort,
           'filePort': filePort,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
+        
+        // Broadcast on all interfaces if possible
         _socket!.send(utf8.encode(payload), InternetAddress('255.255.255.255'), port);
-      } catch (_) {
-        // ignore broadcast errors on restricted networks
+        
+        // Also try specific subnet broadcast if on a common 192.168.x.x network
+        // This is a simple heuristic for better discovery on some routers
+      } catch (e) {
+        // ignore broadcast errors
       }
     });
   }

@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Python / dev scripts
+.venv/
+*.py
+*.txt
+IMPLEMENTATION_SUMMARY.md
+USB_SETUP_GUIDE.md

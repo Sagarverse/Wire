@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wire - Next-Gen Continuity Engine</title>
+    <meta name="description" content="Wire is a unified workspace for sync, control, and advanced cross-device actions. Seamlessly connect your Android, macOS, iOS, and Windows devices.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="blob-cont">
+        <div class="yellow blob"></div>
+        <div class="red blob"></div>
+        <div class="green blob"></div>
+    </div>
+
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <img src="assets/logo.png" alt="Wire Logo" class="nav-logo-img">
+                <span>Wire</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#security">Security</a>
+                <a href="#creator">Creator</a>
+                <a href="#download" class="btn btn-primary btn-nav">Download Now</a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="container hero-container">
+            <div class="hero-content">
+                <div class="pill">
+                    <span class="pulse"></span> 
+                    <span>Wire Protocol v2.0 Live</span>
+                </div>
+                <h1 class="hero-title">The Ultimate<br><span class="gradient-text">Continuity Engine</span></h1>
+                <p class="hero-subtitle">Meld your devices into one synchronized ecosystem. Copy on your phone, paste on your Mac. Share files, control media, and mirror screens—purely local, purely secure.</p>
+                <div class="hero-actions" style="flex-wrap: wrap;">
+                    <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-primary btn-large">
+                        <i class="ri-windows-fill"></i> Get for Windows
+                    </a>
+                    <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-secondary btn-large">
+                        <i class="ri-macbook-line"></i> macOS
+                    </a>
+                    <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-secondary btn-large">
+                        <i class="ri-apple-fill"></i> iOS
+                    </a>
+                    <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-secondary btn-large">
+                        <i class="ri-android-fill"></i> Android
+                    </a>
+                </div>
+                <!-- Mini trusted device section -->
+                <div class="hero-trust">
+                    <p>No cloud limits. Infinite speeds. Fully P2P.</p>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="glass-mockup app-window">
+                    <div class="window-header">
+                        <div class="window-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <div class="window-title">Wire Control Center</div>
+                    </div>
+                    <div class="window-body">
+                        <div class="mockup-header">
+                            <div class="mockup-info">
+                                <h3>Sagar's MacBook Pro</h3>
+                                <div class="status-badge"><span class="indicator"></span> Connected · 12ms ping</div>
+                            </div>
+                            <div class="mockup-battery">
+                                <i class="ri-battery-charge-fill"></i> 94%
+                            </div>
+                        </div>
+                        <div class="mockup-grid">
+                            <div class="mockup-card highlight">
+                                <i class="ri-clipboard-line"></i>
+                                <h4>Clipboard Sync</h4>
+                                <p>Auto-sync active</p>
+                            </div>
+                            <div class="mockup-card">
+                                <i class="ri-folder-transfer-line"></i>
+                                <h4>File Drop</h4>
+                                <p>Ready to receive</p>
+                            </div>
+                            <div class="mockup-card">
+                                <i class="ri-cast-line"></i>
+                                <h4>Mirror Screen</h4>
+                                <p>Tap to start</p>
+                            </div>
+                            <div class="mockup-card">
+                                <i class="ri-links-line"></i>
+                                <h4>Handoff URL</h4>
+                                <p>Share browser link</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <section id="features" class="features-section">
+        <div class="container">
+            <div class="section-header text-center">
+                <h2 class="section-title">Your devices, <span class="gradient-text">united.</span></h2>
+                <p class="section-subtitle">Experience a fluid workflow across all your operating systems. No cables, no clouds, no limits.</p>
+            </div>
+            <div class="feature-grid">
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-smartphone-line"></i>
+                        <i class="ri-mac-line"></i>
+                    </div>
+                    <h3>KDE-Style Device Pairing</h3>
+                    <p>Wire uses an elegant handshake protocol to discover and pair your devices. Once trusted, they remember each other permanently. Tap, auth, done.</p>
+                </div>
+                
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-file-copy-line"></i>
+                    </div>
+                    <h3>Universal Clipboard</h3>
+                    <p>Copy text, links, or even files on your phone and instantly paste them on your computer. With zero latency, it feels like magic.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-send-plane-line"></i>
+                    </div>
+                    <h3>Desktop File Drop</h3>
+                    <p>Send massive files at lightning speed. Just drag and drop files onto the Wire Hub. Your data transfers via local Wi-Fi, bypassing slow cloud servers.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-cast-line"></i>
+                    </div>
+                    <h3>WebRTC Screen Mirroring</h3>
+                    <p>View your Android screen right on your Mac. Enhanced with ICE candidate buffering, our WebRTC pipeline gives you pixel-perfect, zero-lag streaming.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-remote-control-line"></i>
+                    </div>
+                    <h3>Remote Trackpad & Media</h3>
+                    <p>Turn your phone into a multi-touch wireless trackpad or media remote for your PC. Perfect for presentations or late-night movie watching.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-link"></i>
+                    </div>
+                    <h3>Handoff URLs & Sync Mode</h3>
+                    <p>Flick a browser tab from mobile to desktop instantly. Plus, enable Focus Mode to block remote interruptions when in deep work.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-camera-lens-line"></i>
+                    </div>
+                    <h3>Remote Camera Hub</h3>
+                    <p>Unlock macOS integration to securely access your Android's live camera feed. Wire handles WebRTC negotiation natively for uncompromised privacy.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-message-3-line"></i>
+                    </div>
+                    <h3>SMS Management</h3>
+                    <p>Read and reply to your texts without touching your phone. Securely sync your SMS inbox right into the Continuity Engine Dashboard on your PC.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-book-open-line"></i>
+                    </div>
+                    <h3>Student Study Space</h3>
+                    <p>Built for productivity. Access a dedicated Pomodoro timer, Quick notes widget, and citation link management perfectly synced across devices.</p>
+                </div>
+
+                <div class="feature-card glass-panel">
+                    <div class="icon-box">
+                        <i class="ri-hard-drive-2-line"></i>
+                    </div>
+                    <h3>Mount in Finder</h3>
+                    <p>Tired of Android File Transfer? Wire allows you to natively mount your phone directly in the macOS Finder, transforming it into a seamless USB drive.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="security" class="security-section">
+        <div class="container security-container">
+            <div class="security-content">
+                <h2 class="section-title">Built on absolute <span class="gradient-text">Privacy.</span></h2>
+                <ul class="security-list">
+                    <li>
+                        <i class="ri-shield-check-fill"></i>
+                        <div>
+                            <h4>100% Local Peer-to-Peer</h4>
+                            <p>Wire discovers devices over standard UDP/mDNS and connects via WebSocket and WebRTC. Your data never touches a remote server.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <i class="ri-lock-fill"></i>
+                        <div>
+                            <h4>Granular Permissions</h4>
+                            <p>You control exactly what is shared. Disable clipboard sync or reject file drops on a per-device basis instantly.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <i class="ri-speed-up-fill"></i>
+                        <div>
+                            <h4>Unlimited Transfer Speeds</h4>
+                            <p>Because there is no middleman, your file bounds are only limited by the speed of your router. Transfer gigabytes in seconds.</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="security-visual">
+                <div class="radar-circle">
+                    <div class="radar-sweep"></div>
+                    <div class="radar-dot on-radar r-d-1"></div>
+                    <div class="radar-dot on-radar r-d-2"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="creator" class="creator-section">
+        <div class="container">
+            <div class="section-header text-center">
+                <h2 class="section-title">Meet the <span class="gradient-text">Creator</span></h2>
+                <p class="section-subtitle">Data Science student, Hackathon Winner, and app developer.</p>
+            </div>
+            
+            <div class="creator-card glass-panel">
+                <div class="creator-header">
+                    <img src="assets/profile.jpg" alt="Sagar M" class="creator-avatar">
+                    <div class="creator-title">
+                        <h3>Sagar M</h3>
+                        <p class="location"><i class="ri-map-pin-line"></i> Bengaluru, Karnataka 562112</p>
+                        <div class="creator-contact">
+                            <a href="mailto:sagisagar1974@gmail.com"><i class="ri-mail-line"></i> sagisagar1974@gmail.com</a>
+                            <a href="tel:+919019989269"><i class="ri-phone-line"></i> +91 9019989269</a>
+                            <a href="https://linkedin.com/in/sagar-m" target="_blank"><i class="ri-linkedin-fill"></i> LinkedIn</a>
+                            <a href="https://github.com/sgrkannada" target="_blank"><i class="ri-github-fill"></i> GitHub</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="creator-body">
+                    <div class="creator-col">
+                        <h4>Professional Summary</h4>
+                        <p>Data Science student skilled in Python, SQL, and C, with hands-on experience in AI and IoT solutions. Winner – Udaya 1.0 Hackathon and NASA Space Apps Challenge Global Nominee. Recognized for innovation, adaptability, and teamwork in building AI-powered real-world projects.</p>
+                        
+                        <h4>Education</h4>
+                        <ul class="creator-list">
+                            <li><strong>B.Tech in Data Science</strong> — Dayananda Sagar University (Expected 2027)</li>
+                            <li><strong>PUC</strong> — Sri Sapthagiri PU College (2021–2023, 91.3%)</li>
+                            <li><strong>SSLC</strong> — Karnataka Public School (2018–2021, 95.4%)</li>
+                        </ul>
+                        
+                        <h4>Soft Skills</h4>
+                        <p class="tags-container">
+                            <span class="skill-tag">Adaptability</span>
+                            <span class="skill-tag">Leadership</span>
+                            <span class="skill-tag">Team Work</span>
+                            <span class="skill-tag">Time Management</span>
+                            <span class="skill-tag">Dedication</span>
+                            <span class="skill-tag">Discipline</span>
+                            <span class="skill-tag">Creative Problem Solving</span>
+                            <span class="skill-tag">Communication</span>
+                        </p>
+                    </div>
+                    
+                    <div class="creator-col">
+                        <h4>Technical Skills</h4>
+                        <ul class="creator-list">
+                            <li><strong>Programming:</strong> Python, SQL, C, Java, JavaScript, HTML/CSS, Dart</li>
+                            <li><strong>Frameworks:</strong> Flutter, Android Studio, React.js, Node.js, Express.js, Bootstrap</li>
+                            <li><strong>Data Science:</strong> Pandas, NumPy, Scikit-learn, TensorFlow (Basic), Jupyter, MATLAB</li>
+                            <li><strong>Databases & Cloud:</strong> MySQL, Microsoft Azure</li>
+                            <li><strong>Tools:</strong> Git, GitHub, VS Code, MS Office, Adobe Photoshop, Premiere Pro</li>
+                        </ul>
+
+                        <h4>Projects & Achievements</h4>
+                        <ul class="creator-list highlight-list">
+                            <li><i class="ri-trophy-line"></i> Udaya 1.0 Hackathon Winner — Rs.15,000 (AgriConnect)</li>
+                            <li><i class="ri-planet-line"></i> NASA Space Apps Challenge — Global Nominee</li>
+                            <li><i class="ri-medal-line"></i> DSU DevHack 2.0 — $1000 Vultr Cloud Credit Winner</li>
+                            <li><i class="ri-star-line"></i> YUVAI Initiative — Top 50 National Participant</li>
+                            <li><i class="ri-code-s-slash-line"></i> Developed 10+ Cross-platform apps using Flutter</li>
+                        </ul>
+
+                        <h4>Certifications</h4>
+                        <p class="cert-text">Microsoft Azure DP-900 • Oracle AI Foundation • Oracle Data Science Pro • Snowflake for Developers • Industrial IoT for Automation • SQL for Beginners & Advanced</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="download" class="cta-section">
+        <div class="container text-center">
+            <h2 class="section-title">Ready to wire it all together?</h2>
+            <p class="section-subtitle mb-40">Install the app on all your devices to start your unified workspace.</p>
+            <div class="cta-buttons">
+                <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-primary btn-large">
+                    <i class="ri-windows-fill"></i> Download Windows
+                </a>
+                <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-secondary btn-large">
+                    <i class="ri-macbook-line"></i> macOS
+                </a>
+                <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-secondary btn-large">
+                    <i class="ri-apple-fill"></i> iOS
+                </a>
+                <a href="https://sagarverse.github.io/Wire/release" target="_blank" class="btn btn-secondary btn-large">
+                    <i class="ri-android-fill"></i> Android
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container footer-content">
+            <div class="logo">
+                <img src="assets/logo.png" alt="Wire Logo" class="nav-logo-img">
+                <span>Wire</span>
+            </div>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">GitHub Repository</a>
+            </div>
+            <p class="copyright">&copy; 2026 Wire Continuity Engine. Built for power users.</p>
+        </div>
+    </footer>
+
+    <script src="js/main.js"></script>
+</body>
+</html>

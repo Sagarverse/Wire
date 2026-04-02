@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wire Phone Browser</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .path {
+            background: #e8e8e8;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-family: monospace;
+        }
+        .file-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .file-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        .file-item:hover {
+            background: #f9f9f9;
+        }
+        .file-icon {
+            margin-right: 10px;
+            font-size: 24px;
+        }
+        .folder { color: #5B9BD5; }
+        .file { color: #666; }
+        .buttons {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0051D5;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .info {
+            background: #E8F5E9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Wire Phone Browser</h1>
+        
+        <div class="info">
+            <strong>✅ Your Android phone is connected!</strong><br>
+            Browse files using ADB. Click folders to navigate, click files to download.
+        </div>
+        
+        <div class="path" id="currentPath">/storage/emulated/0</div>
+        
+        <div class="buttons">
+            <button onclick="goBack()" id="backBtn">⬅️ Back</button>
+            <button onclick="goHome()">🏠 Home</button>
+            <button onclick="refresh()">🔄 Refresh</button>
+            <button onclick="openInFinder()">📂 Open Download Folder</button>
+        </div>
+        
+        <ul class="file-list" id="fileList">
+            <li class="file-item">Loading files...</li>
+        </ul>
+    </div>
+
+    <script>
+        let currentPath = '/storage/emulated/0';
+        let pathHistory = [];
+
+        async function loadFiles(path) {
+            currentPath = path;
+            document.getElementById('currentPath').textContent = path;
+            document.getElementById('fileList').innerHTML = '<li class="file-item">Loading...</li>';
+            
+            try {
+                const response = await fetch(`/api/list?path=${encodeURIComponent(path)}`);
+                const payload = await response.json();
+                
+                if (!response.ok || !payload.ok) {
+                    const message = payload?.error || 'Failed to load files';
+                    document.getElementById('fileList').innerHTML =
+                        `<li class="file-item" style="color: red;">❌ ${message}</li>`;
+                    return;
+                }
+
+                renderFiles(payload.files || []);
+            } catch (error) {
+                document.getElementById('fileList').innerHTML = 
+                    '<li class="file-item" style="color: red;">❌ Error loading files. Make sure the server is running.</li>';
+            }
+        }
+
+        function renderFiles(files) {
+            const fileList = document.getElementById('fileList');
+            
+            if (files.length === 0) {
+                fileList.innerHTML = '<li class="file-item">📭 Empty folder</li>';
+                return;
+            }
+            
+            fileList.innerHTML = files.map(file => {
+                const encodedName = encodeURIComponent(file.name);
+                return `
+                <li class="file-item" onclick="handleClick(decodeURIComponent('${encodedName}'), ${file.isDirectory})">
+                    <span class="file-icon ${file.isDirectory ? 'folder' : 'file'}">
+                        ${file.isDirectory ? '📁' : '📄'}
+                    </span>
+                    <span>${file.name}</span>
+                </li>
+            `;
+            }).join('');
+        }
+
+        function handleClick(name, isDirectory) {
+            if (isDirectory) {
+                pathHistory.push(currentPath);
+                const newPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
+                loadFiles(newPath);
+            } else {
+                downloadFile(name);
+            }
+        }
+
+        async function downloadFile(fileName) {
+            const filePath = `${currentPath}/${fileName}`;
+            const confirmation = confirm(`Download ${fileName} to your Mac's Downloads folder?`);
+            
+            if (confirmation) {
+                try {
+                    const response = await fetch(`/api/download?path=${encodeURIComponent(filePath)}`);
+                    if (response.ok) {
+                        alert(`✅ Downloaded ${fileName} to ~/Downloads/`);
+                    } else {
+                        alert('❌ Download failed');
+                    }
+                } catch (error) {
+                    alert('❌ Error: ' + error.message);
+                }
+            }
+        }
+
+        function goBack() {
+            if (pathHistory.length > 0) {
+                currentPath = pathHistory.pop();
+                loadFiles(currentPath);
+            }
+        }
+
+        function goHome() {
+            pathHistory = [];
+            loadFiles('/storage/emulated/0');
+        }
+
+        function refresh() {
+            loadFiles(currentPath);
+        }
+
+        function openInFinder() {
+            fetch('/api/open-downloads');
+        }
+
+        // Load initial files
+        loadFiles(currentPath);
+    </script>
+</body>
+</html>

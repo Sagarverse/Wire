@@ -45,6 +45,8 @@
 	<string>Wire needs microphone access for VoIP calls.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Wire uses Bluetooth to discover and pair with nearby devices.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Wire needs Accessibility access to mirror keyboard input from your other devices.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

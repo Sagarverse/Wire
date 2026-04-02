@@ -1,0 +1,27 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Wire (macOS)",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"run",
+				"-d",
+				"macos"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Run Wire (Android)",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"run",
+				"-d",
+				"00118648R002174"
+			],
+			"isBackground": true
+		}
+	]
+}

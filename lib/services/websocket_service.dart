@@ -14,6 +14,7 @@ class WebSocketService {
   DateTime? _clientLastSeen;
   Timer? _heartbeatTimer;
   Duration _heartbeatInterval = const Duration(seconds: 30);
+  bool _aggressiveHeartbeat = false;
   final _incoming = StreamController<Map<String, dynamic>>.broadcast();
 
   Stream<Map<String, dynamic>> get messages => _incoming.stream;
@@ -26,7 +27,11 @@ class WebSocketService {
     if (_server != null) {
       return;
     }
-    _server = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
+    _server = await HttpServer.bind(
+      InternetAddress.anyIPv4,
+      port,
+      shared: true,
+    );
     _ensureHeartbeatTimer();
     _server!.listen((request) async {
       if (WebSocketTransformer.isUpgradeRequest(request)) {
@@ -126,6 +131,12 @@ class WebSocketService {
     }
   }
 
+  void setAggressiveHeartbeat(bool aggressive) {
+    if (_aggressiveHeartbeat == aggressive) return;
+    _aggressiveHeartbeat = aggressive;
+    _ensureHeartbeatTimer();
+  }
+
   void _updateLastSeen(WebSocket? socket) {
     if (socket == null) return;
     if (socket == _clientSocket) {
@@ -135,9 +146,22 @@ class WebSocketService {
     }
   }
 
+  void broadcast(Map<String, dynamic> data) {
+    final message = jsonEncode(data);
+    _clientSocket?.add(message);
+    for (final client in _serverClients) {
+      client.add(message);
+    }
+  }
+
   void _ensureHeartbeatTimer() {
     final connected = isClientConnected || _serverClients.isNotEmpty;
-    final nextInterval = connected ? const Duration(seconds: 10) : const Duration(seconds: 30);
+    var nextInterval = connected
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 30);
+    if (_aggressiveHeartbeat && connected) {
+      nextInterval = const Duration(seconds: 3);
+    }
     if (_heartbeatTimer != null && _heartbeatInterval == nextInterval) {
       return;
     }
@@ -148,7 +172,8 @@ class WebSocketService {
       final now = DateTime.now();
       if (_clientSocket != null) {
         _clientSocket?.add(jsonEncode({'type': 'ping'}));
-        if (_clientLastSeen != null && now.difference(_clientLastSeen!).inSeconds > 90) {
+        if (_clientLastSeen != null &&
+            now.difference(_clientLastSeen!).inSeconds > 90) {
           _clientSocket?.close();
           _clientSocket = null;
           _clientLastSeen = null;

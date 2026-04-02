@@ -4,40 +4,38 @@ import 'package:flutter/services.dart';
 class ClipboardService {
   ClipboardService(
     this._channel, {
-    this.pollInterval = const Duration(milliseconds: 1200),
-    this.minEmitInterval = const Duration(milliseconds: 1500),
+    this.pollInterval = const Duration(milliseconds: 100),
   });
 
   final MethodChannel _channel;
-  final EventChannel _eventChannel = const EventChannel('wire/clipboard_events');
+  final EventChannel _eventChannel = const EventChannel(
+    'wire/clipboard_events',
+  );
   final Duration pollInterval;
-  final Duration minEmitInterval;
   final _controller = StreamController<String>.broadcast();
   Timer? _timer;
   String? _lastLocalText;
   String? _lastRemoteText;
   DateTime? _lastRemoteAt;
-  DateTime? _lastEmitAt;
   StreamSubscription? _eventSub;
 
   Stream<String> get onClipboardChanged => _controller.stream;
 
   Future<void> start() async {
-    _eventSub ??= _eventChannel.receiveBroadcastStream().listen((event) {
-      if (event is String && event.isNotEmpty) {
-        if (event == _lastLocalText || event == _lastRemoteText) {
-          return;
+    _eventSub ??= _eventChannel.receiveBroadcastStream().listen(
+      (event) {
+        if (event is String && event.isNotEmpty) {
+          if (event == _lastLocalText || event == _lastRemoteText) {
+            return;
+          }
+          _lastLocalText = event;
+          _controller.add(event);
         }
-        if (_lastEmitAt != null && DateTime.now().difference(_lastEmitAt!) < minEmitInterval) {
-          return;
-        }
-        _lastLocalText = event;
-        _lastEmitAt = DateTime.now();
-        _controller.add(event);
-      }
-    }, onError: (_) {
-      // ignore
-    });
+      },
+      onError: (_) {
+        // ignore
+      },
+    );
 
     _timer ??= Timer.periodic(pollInterval, (_) async {
       final text = await getClipboardText();
@@ -47,11 +45,7 @@ class ClipboardService {
       if (text == _lastLocalText || text == _lastRemoteText) {
         return;
       }
-      if (_lastEmitAt != null && DateTime.now().difference(_lastEmitAt!) < minEmitInterval) {
-        return;
-      }
       _lastLocalText = text;
-      _lastEmitAt = DateTime.now();
       _controller.add(text);
     });
   }
@@ -89,7 +83,8 @@ class ClipboardService {
   bool shouldIgnoreIncoming(String text) {
     if (text.isEmpty) return true;
     if (text == _lastLocalText || text == _lastRemoteText) return true;
-    if (_lastRemoteAt != null && DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 2500) {
+    if (_lastRemoteAt != null &&
+        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 800) {
       return true;
     }
     return false;
@@ -97,6 +92,24 @@ class ClipboardService {
 
   void markRemote(String text) {
     _lastRemoteText = text;
+  }
+
+  /// Returns base64-encoded PNG if an image is on the clipboard, otherwise null.
+  Future<String?> getClipboardImage() async {
+    try {
+      return await _channel.invokeMethod<String>('getClipboardImage');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Writes a base64-encoded image to the clipboard.
+  Future<void> setClipboardImage(String base64) async {
+    try {
+      await _channel.invokeMethod('setClipboardImage', {'base64': base64});
+    } catch (_) {
+      // ignore
+    }
   }
 
   void dispose() {
