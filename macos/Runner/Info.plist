@@ -8,6 +8,18 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Wire File Share</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Any File</string>
 			<key>LSItemContentTypes</key>
 			<array>
@@ -47,19 +59,7 @@
 	<string>Wire uses Bluetooth to discover and pair with nearby devices.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Wire needs Accessibility access to mirror keyboard input from your other devices.</string>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Wire File Share</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-		</dict>
-	</array>
+
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
