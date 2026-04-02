@@ -700,7 +700,7 @@ class _SectionHeader extends StatelessWidget {
             letterSpacing: 1.05,
           ),
         ),
-        if (trailing != null) trailing!,
+        ?trailing,
       ],
     );
   }
