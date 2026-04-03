@@ -39,25 +39,31 @@ class AppTheme {
   static ThemeData light() {
     const scheme = ColorScheme(
       brightness: Brightness.light,
-      primary: Color(0xFF2563EB), // Vibrant blue
+      primary: Color(0xFF0061FF), // Classic Wire Blue
       onPrimary: Colors.white,
-      secondary: Color(0xFF7C3AED), // Premium purple
+      primaryContainer: Color(0xFFE0E7FF),
+      onPrimaryContainer: Color(0xFF001D6E),
+      secondary: Color(0xFF475569), 
       onSecondary: Colors.white,
-      error: Color(0xFFEF4444), // Modern red
+      secondaryContainer: Color(0xFFF1F5F9),
+      onSecondaryContainer: Color(0xFF1E293B),
+      error: Color(0xFFDC2626), 
       onError: Colors.white,
-      surface: Color(0xFFF8FAFC), // Softer background
-      onSurface: Color(0xFF1E293B), // Deep slate
-      outline: Color(0xFFCBD5E1), // Subtle border
-      tertiary: Color(0xFF06B6D4), // Cyan accent
+      surface: Colors.white,
+      onSurface: Color(0xFF0F172A),
+      outline: Color(0xFFE2E8F0),
+      outlineVariant: Color(0xFFCBD5E1),
+      tertiary: Color(0xFF3B82F6),
       onTertiary: Colors.white,
     );
 
     return _baseTheme(scheme).copyWith(
-      scaffoldBackgroundColor: const Color(0xFFF3F6FB),
+      scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
-        foregroundColor: Color(0xFF1E293B),
+        foregroundColor: Color(0xFF0F172A),
         elevation: 0,
+        centerTitle: false,
       ),
     );
   }
@@ -65,25 +71,31 @@ class AppTheme {
   static ThemeData dark() {
     const scheme = ColorScheme(
       brightness: Brightness.dark,
-      primary: Color(0xFF60A5FA), // Lighter blue
+      primary: Color(0xFF60A5FA), // Light Blue for dark mode
       onPrimary: Color(0xFF0F172A),
-      secondary: Color(0xFF8B5CF6), // Premium purple
-      onSecondary: Color(0xFF1E293B),
-      error: Color(0xFFF87171), // Modern red
-      onError: Color(0xFF450A0A),
-      surface: Color(0xFF111827), // Deep slate
-      onSurface: Color(0xFFF1F5F9), // Light text
-      outline: Color(0xFF334155), // Subtle border
-      tertiary: Color(0xFF22D3EE), // Cyan accent
-      onTertiary: Color(0xFF083344),
+      primaryContainer: Color(0xFF1E3A8A),
+      onPrimaryContainer: Color(0xFFDBEAFE),
+      secondary: Color(0xFF94A3B8),
+      onSecondary: Color(0xFF0F172A),
+      secondaryContainer: Color(0xFF1E293B),
+      onSecondaryContainer: Color(0xFFF1F5F9),
+      error: Color(0xFFF87171),
+      onError: Color(0xFF7F1D1D),
+      surface: Color(0xFF0F172A), // Deep Slate
+      onSurface: Color(0xFFF1F5F9),
+      outline: Color(0xFF334155),
+      outlineVariant: Color(0xFF475569),
+      tertiary: Color(0xFF38BDF8),
+      onTertiary: Color(0xFF0C4A6E),
     );
 
     return _baseTheme(scheme).copyWith(
-      scaffoldBackgroundColor: const Color(0xFF0B1120),
+      scaffoldBackgroundColor: const Color(0xFF020617), // Near black blue
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: Color(0xFFF1F5F9),
         elevation: 0,
+        centerTitle: false,
       ),
     );
   }
@@ -199,7 +211,15 @@ extension ThemeFx on BuildContext {
   List<Color> get fxBackgroundGradient {
     final dark = Theme.of(this).brightness == Brightness.dark;
     return dark
-        ? const [Color(0xFF0B1120), Color(0xFF1E293B), Color(0xFF334155)]
-        : const [Color(0xFFF3F6FB), Color(0xFFE0EAFC), Color(0xFFD1F3F9)];
+        ? const [
+            Color(0xFF020617), // Deep slate black
+            Color(0xFF0F172A), // Midnight blue
+            Color(0xFF1E293B), // Deep Slate
+          ]
+        : const [
+            Color(0xFFF8FAFC), // Off-white
+            Color(0xFFF1F5F9), // Light slate
+            Color(0xFFEFF6FF), // Soft blue
+          ];
   }
 }

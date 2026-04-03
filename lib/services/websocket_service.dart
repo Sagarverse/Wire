@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 class WebSocketService {
   WebSocketService({this.port = 5757});
@@ -11,27 +12,45 @@ class WebSocketService {
   final Map<WebSocket, DateTime> _serverLastSeen = {};
   String? _lastClientAddress;
   WebSocket? _clientSocket;
+  int? _actualPort;
   DateTime? _clientLastSeen;
   Timer? _heartbeatTimer;
-  Duration _heartbeatInterval = const Duration(seconds: 30);
+  Duration _heartbeatInterval = const Duration(seconds: 15);
   bool _aggressiveHeartbeat = false;
+  String? _lastError;
+  String? get errorMessage => _lastError;
   final _incoming = StreamController<Map<String, dynamic>>.broadcast();
+  final _statusController = StreamController<ConnectionStatus>.broadcast();
+
+  // Prevent re-entrant heartbeat setup
+  bool _heartbeatSetupInProgress = false;
 
   Stream<Map<String, dynamic>> get messages => _incoming.stream;
+  Stream<ConnectionStatus> get status => _statusController.stream;
 
   bool get isClientConnected => _clientSocket?.readyState == WebSocket.open;
   bool get hasServerClients => _serverClients.isNotEmpty;
   String? get lastClientAddress => _lastClientAddress;
+  int get actualPort => _actualPort ?? port;
 
   Future<void> startServer() async {
     if (_server != null) {
       return;
     }
-    _server = await HttpServer.bind(
-      InternetAddress.anyIPv4,
-      port,
-      shared: true,
-    );
+    try {
+      _server = await HttpServer.bind(
+        InternetAddress.anyIPv4,
+        port,
+        shared: true,
+      );
+    } catch (e) {
+      _server = await HttpServer.bind(
+        InternetAddress.anyIPv4,
+        0,
+        shared: true,
+      );
+    }
+    _actualPort = _server!.port;
     _ensureHeartbeatTimer();
     _server!.listen((request) async {
       if (WebSocketTransformer.isUpgradeRequest(request)) {
@@ -39,17 +58,24 @@ class WebSocketService {
         final socket = await WebSocketTransformer.upgrade(request);
         _serverClients.add(socket);
         _serverLastSeen[socket] = DateTime.now();
+        _statusController.add(ConnectionStatus.connected);
         _ensureHeartbeatTimer();
         socket.listen(
           (data) => _handleIncoming(data, socket: socket),
           onDone: () {
             _serverClients.remove(socket);
             _serverLastSeen.remove(socket);
+            if (_serverClients.isEmpty && _clientSocket == null) {
+              _statusController.add(ConnectionStatus.disconnected);
+            }
             _ensureHeartbeatTimer();
           },
           onError: (_) {
             _serverClients.remove(socket);
             _serverLastSeen.remove(socket);
+            if (_serverClients.isEmpty && _clientSocket == null) {
+              _statusController.add(ConnectionStatus.disconnected);
+            }
             _ensureHeartbeatTimer();
           },
         );
@@ -61,47 +87,73 @@ class WebSocketService {
   }
 
   Future<void> connectToPeer(String host, {int? portOverride}) async {
+    if (host.isEmpty) return;
     final targetPort = portOverride ?? port;
     final uri = Uri.parse('ws://$host:$targetPort');
+    _lastError = null;
+    _statusController.add(ConnectionStatus.connecting);
+    
     try {
       await _clientSocket?.close();
-      _clientSocket = await WebSocket.connect(uri.toString());
+      _clientSocket = null;
+      _clientLastSeen = null;
+      
+      _clientSocket = await WebSocket.connect(
+        uri.toString(),
+      ).timeout(const Duration(seconds: 5));
+      
       _clientLastSeen = DateTime.now();
+      _statusController.add(ConnectionStatus.connected);
       _ensureHeartbeatTimer();
+      
       _clientSocket?.listen(
         (data) => _handleIncoming(data, socket: _clientSocket),
         onDone: () {
           _clientSocket = null;
           _clientLastSeen = null;
+          if (_serverClients.isEmpty) {
+            _statusController.add(ConnectionStatus.disconnected);
+          }
           _ensureHeartbeatTimer();
         },
-        onError: (_) {
+        onError: (e) {
+          _lastError = e.toString();
           _clientSocket = null;
           _clientLastSeen = null;
+          _statusController.add(ConnectionStatus.error);
           _ensureHeartbeatTimer();
         },
       );
-    } catch (_) {
+    } catch (e) {
+      _lastError = e.toString();
       _clientSocket = null;
       _clientLastSeen = null;
+      _statusController.add(ConnectionStatus.error);
       _ensureHeartbeatTimer();
+      rethrow;
     }
   }
 
   void send(Map<String, dynamic> message) {
     final data = jsonEncode(message);
-    if (_clientSocket != null && _clientSocket!.readyState == WebSocket.open) {
-      _clientSocket!.add(data);
-    }
-    for (final client in _serverClients) {
-      if (client.readyState == WebSocket.open) {
-        client.add(data);
+    try {
+      if (_clientSocket != null && _clientSocket!.readyState == WebSocket.open) {
+        _clientSocket!.add(data);
       }
+      for (final client in _serverClients.toList()) {
+        if (client.readyState == WebSocket.open) {
+          client.add(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error sending WebSocket message: $e');
     }
   }
 
   Future<void> disconnectClient() async {
-    await _clientSocket?.close();
+    try {
+      await _clientSocket?.close();
+    } catch (_) {}
     _clientSocket = null;
     _clientLastSeen = null;
     _ensureHeartbeatTimer();
@@ -114,7 +166,9 @@ class WebSocketService {
         if (decoded is Map<String, dynamic>) {
           final type = decoded['type']?.toString();
           if (type == 'ping') {
-            socket?.add(jsonEncode({'type': 'pong'}));
+            try {
+              socket?.add(jsonEncode({'type': 'pong'}));
+            } catch (_) {}
             _updateLastSeen(socket);
             return;
           }
@@ -148,66 +202,127 @@ class WebSocketService {
 
   void broadcast(Map<String, dynamic> data) {
     final message = jsonEncode(data);
-    _clientSocket?.add(message);
-    for (final client in _serverClients) {
-      client.add(message);
+    try {
+      _clientSocket?.add(message);
+    } catch (_) {}
+    for (final client in _serverClients.toList()) {
+      try {
+        client.add(message);
+      } catch (_) {}
     }
   }
 
   void _ensureHeartbeatTimer() {
-    final connected = isClientConnected || _serverClients.isNotEmpty;
-    var nextInterval = connected
-        ? const Duration(seconds: 10)
-        : const Duration(seconds: 30);
-    if (_aggressiveHeartbeat && connected) {
-      nextInterval = const Duration(seconds: 3);
+    // ** FIX: Prevent re-entrant calls from causing infinite loops **
+    if (_heartbeatSetupInProgress) return;
+    _heartbeatSetupInProgress = true;
+
+    try {
+      final connected = isClientConnected || _serverClients.isNotEmpty;
+      var nextInterval = connected
+          ? const Duration(seconds: 10)
+          : const Duration(seconds: 30);
+      if (_aggressiveHeartbeat && connected) {
+        nextInterval = const Duration(seconds: 3);
+      }
+      
+      // Only recreate if interval changed or timer is null
+      if (_heartbeatTimer != null && _heartbeatInterval == nextInterval) {
+        return;
+      }
+      
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+      _heartbeatInterval = nextInterval;
+
+      if (!connected) {
+        // No connections, no need for heartbeat
+        return;
+      }
+
+      _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+        _performHeartbeat();
+      });
+    } finally {
+      _heartbeatSetupInProgress = false;
     }
-    if (_heartbeatTimer != null && _heartbeatInterval == nextInterval) {
-      return;
-    }
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _heartbeatInterval = nextInterval;
-    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
-      final now = DateTime.now();
-      if (_clientSocket != null) {
+  }
+
+  void _performHeartbeat() {
+    final now = DateTime.now();
+    
+    // Check client socket
+    if (_clientSocket != null) {
+      try {
         _clientSocket?.add(jsonEncode({'type': 'ping'}));
-        if (_clientLastSeen != null &&
-            now.difference(_clientLastSeen!).inSeconds > 90) {
+      } catch (_) {}
+      if (_clientLastSeen != null &&
+          now.difference(_clientLastSeen!).inSeconds > 90) {
+        try {
           _clientSocket?.close();
-          _clientSocket = null;
-          _clientLastSeen = null;
-          _ensureHeartbeatTimer();
+        } catch (_) {}
+        _clientSocket = null;
+        _clientLastSeen = null;
+        if (_serverClients.isEmpty) {
+          _statusController.add(ConnectionStatus.disconnected);
         }
       }
-      for (final client in _serverClients.toList()) {
+    }
+    
+    // Check server clients
+    final staleClients = <WebSocket>[];
+    for (final client in _serverClients.toList()) {
+      try {
         client.add(jsonEncode({'type': 'ping'}));
-        final last = _serverLastSeen[client];
-        if (last != null && now.difference(last).inSeconds > 90) {
-          client.close();
-          _serverClients.remove(client);
-          _serverLastSeen.remove(client);
-          _ensureHeartbeatTimer();
-        }
+      } catch (_) {
+        staleClients.add(client);
+        continue;
       }
-      if (_clientSocket == null && _serverClients.isEmpty) {
-        _heartbeatTimer?.cancel();
-        _heartbeatTimer = null;
+      final last = _serverLastSeen[client];
+      if (last != null && now.difference(last).inSeconds > 90) {
+        staleClients.add(client);
       }
-    });
+    }
+    
+    for (final client in staleClients) {
+      try {
+        client.close();
+      } catch (_) {}
+      _serverClients.remove(client);
+      _serverLastSeen.remove(client);
+    }
+    
+    if (_clientSocket == null && _serverClients.isEmpty) {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+      _statusController.add(ConnectionStatus.disconnected);
+    }
   }
 
   Future<void> dispose() async {
-    for (final client in _serverClients) {
-      await client.close();
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    for (final client in _serverClients.toList()) {
+      try {
+        await client.close();
+      } catch (_) {}
     }
     _serverClients.clear();
     _serverLastSeen.clear();
-    await _clientSocket?.close();
+    try {
+      await _clientSocket?.close();
+    } catch (_) {}
     await _server?.close(force: true);
     _server = null;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
     await _incoming.close();
+    await _statusController.close();
   }
+}
+
+enum ConnectionStatus {
+  idle,
+  connecting,
+  connected,
+  disconnected,
+  error
 }

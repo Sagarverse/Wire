@@ -24,21 +24,55 @@ class FileTransferService {
 
   final int port;
   HttpServer? _server;
+  int? _actualPort;
   final _receiveProgress = StreamController<FileReceiveProgress>.broadcast();
   final _receiveComplete = StreamController<FileReceiveProgress>.broadcast();
 
   Stream<FileReceiveProgress> get receiveProgress => _receiveProgress.stream;
   Stream<FileReceiveProgress> get receiveComplete => _receiveComplete.stream;
+  int get actualPort => _actualPort ?? port;
+
+  final List<String> _allowedRoots = [];
+
+  void setAllowedRoots(List<String> roots) {
+    _allowedRoots.clear();
+    _allowedRoots.addAll(roots);
+  }
+
+  bool _isPathSafe(String path) {
+    if (_allowedRoots.isEmpty) return true; // No restrictions configured
+    final normalized = p.normalize(p.absolute(path));
+    final safe = _allowedRoots.any((root) {
+      final normalizedRoot = p.normalize(p.absolute(root));
+      return normalized.startsWith(normalizedRoot);
+    });
+    if (!safe) {
+      debugPrint('⛔ _isPathSafe DENIED: "$normalized"');
+      debugPrint('   Allowed roots: $_allowedRoots');
+    }
+    return safe;
+  }
 
   Future<void> startServer() async {
     if (_server != null) {
       return;
     }
-    _server = await HttpServer.bind(
-      InternetAddress.anyIPv4,
-      port,
-      shared: true,
-    );
+    try {
+      _server = await HttpServer.bind(
+        InternetAddress.anyIPv4,
+        port,
+        shared: true,
+      );
+    } catch (e) {
+      debugPrint('Default file port $port taken, falling back to dynamic port...');
+      _server = await HttpServer.bind(
+        InternetAddress.anyIPv4,
+        0,
+        shared: true,
+      );
+    }
+    _actualPort = _server!.port;
+    debugPrint('File server listening on ${_server!.address.address}:${_server!.port}');
     _server!.listen((request) async {
       debugPrint(
         'File server received request: ${request.method} ${request.uri.path}',
@@ -95,9 +129,17 @@ class FileTransferService {
         } else if (request.method == 'GET' && request.uri.path == '/browse') {
           // --- Remote File Browser: list directory ---
           final rawPath = request.uri.queryParameters['path'] ?? '';
-          final Directory browseDir = rawPath.isNotEmpty
-              ? Directory(rawPath)
+          final Directory browseDir = rawPath.isNotEmpty 
+              ? Directory(rawPath) 
               : await _getReceiveDirectory();
+
+          if (!_isPathSafe(browseDir.path)) {
+            request.response.statusCode = HttpStatus.forbidden;
+            request.response.write(jsonEncode({'error': 'Access denied'}));
+            await request.response.close();
+            return;
+          }
+
           if (!await browseDir.exists()) {
             request.response.statusCode = HttpStatus.notFound;
             request.response.write(
@@ -145,9 +187,11 @@ class FileTransferService {
         } else if (request.method == 'GET' && request.uri.path == '/download') {
           // --- Remote File Download: stream file ---
           final filePath = request.uri.queryParameters['path'] ?? '';
-          if (filePath.isEmpty || !await File(filePath).exists()) {
-            request.response.statusCode = HttpStatus.notFound;
-            request.response.write('File not found');
+          if (filePath.isEmpty || !_isPathSafe(filePath) || !await File(filePath).exists()) {
+            request.response.statusCode = filePath.isEmpty || !await File(filePath).exists() 
+                ? HttpStatus.notFound 
+                : HttpStatus.forbidden;
+            request.response.write(filePath.isEmpty || !await File(filePath).exists() ? 'File not found' : 'Access denied');
             await request.response.close();
           } else {
             final file = File(filePath);
@@ -163,6 +207,17 @@ class FileTransferService {
               'application/octet-stream',
             );
             debugPrint('Sending file for download: $filename ($length bytes)');
+            await file.openRead().pipe(request.response);
+          }
+        } else if (request.method == 'GET' && request.uri.path == '/thumb') {
+          // --- Remote Thumbnail: stream file (or optimized thumb) ---
+          final filePath = request.uri.queryParameters['path'] ?? '';
+          if (filePath.isEmpty || !_isPathSafe(filePath) || !await File(filePath).exists()) {
+            request.response.statusCode = HttpStatus.notFound;
+            await request.response.close();
+          } else {
+            final file = File(filePath);
+            // In a pro app, we'd resize here. For now, we serve the file as-is.
             await file.openRead().pipe(request.response);
           }
         } else {

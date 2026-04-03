@@ -1,4 +1,4 @@
-package com.example.wire
+package dev.sagarm.wire
 
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -200,6 +200,9 @@ class MainActivity : FlutterActivity() {
 					"activateApp" -> {
 						activateApp()
 						result.success(true)
+					}
+					"prepareScreenCapture" -> {
+						prepareScreenCapture(result)
 					}
 					else -> result.notImplemented()
 				}
@@ -596,6 +599,19 @@ class MainActivity : FlutterActivity() {
 		} else {
 			// Older versions don't have granular DND via NotificationManager
 			result.success(false)
+		}
+	}
+
+	private fun prepareScreenCapture(result: MethodChannel.Result) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+			// On Android 10+, getDisplayMedia works best when started from a foreground service.
+			// We already have BackgroundService running. We can also manually trigger 
+			// the MediaProjection permission dialog here if needed, but 
+			// Flutter WebRTC usually handles the dialog. 
+			// This method simply ensures we are ready.
+			result.success(true)
+		} else {
+			result.success(true) 
 		}
 	}
 

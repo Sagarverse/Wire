@@ -3,10 +3,17 @@ import 'dart:convert';
 import 'dart:io';
 
 class DiscoveryPeerInfo {
-  DiscoveryPeerInfo({required this.address, required this.deviceId, required this.wsPort, required this.filePort});
+  DiscoveryPeerInfo({
+    required this.address,
+    required this.deviceId,
+    required this.deviceName,
+    required this.wsPort,
+    required this.filePort,
+  });
 
   final InternetAddress address;
   final String deviceId;
+  final String deviceName;
   final int wsPort;
   final int filePort;
 }
@@ -21,6 +28,7 @@ class DiscoveryService {
 
   Future<void> start({
     required String deviceId,
+    required String deviceName,
     required int wsPort,
     required int filePort,
     required void Function(DiscoveryPeerInfo info) onPeerFound,
@@ -28,7 +36,16 @@ class DiscoveryService {
     if (_socket != null) {
       return;
     }
-    _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port, reuseAddress: true, reusePort: false);
+    try {
+      _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port, reuseAddress: true, reusePort: true);
+    } catch (_) {
+      // Port might be held briefly after restart — retry with reusePort
+      try {
+        _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port, reuseAddress: true);
+      } catch (_) {
+        return; // Can't bind, skip discovery
+      }
+    }
     _socket!.broadcastEnabled = true;
     _socket!.listen((event) {
       if (event == RawSocketEvent.read) {
@@ -41,12 +58,14 @@ class DiscoveryService {
             if (peerId == null || peerId == deviceId) {
               return;
             }
+            final peerName = message['deviceName'] as String? ?? 'Wire Device';
             final ws = message['wsPort'] as int? ?? wsPort;
             final file = message['filePort'] as int? ?? filePort;
             onPeerFound(
               DiscoveryPeerInfo(
                 address: datagram.address,
                 deviceId: peerId,
+                deviceName: peerName,
                 wsPort: ws,
                 filePort: file,
               ),
@@ -64,16 +83,13 @@ class DiscoveryService {
         final payload = jsonEncode({
           'type': 'wire_discovery',
           'deviceId': deviceId,
+          'deviceName': deviceName,
           'wsPort': wsPort,
           'filePort': filePort,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
         
-        // Broadcast on all interfaces if possible
         _socket!.send(utf8.encode(payload), InternetAddress('255.255.255.255'), port);
-        
-        // Also try specific subnet broadcast if on a common 192.168.x.x network
-        // This is a simple heuristic for better discovery on some routers
       } catch (e) {
         // ignore broadcast errors
       }

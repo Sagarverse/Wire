@@ -2,9 +2,15 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PY_SCRIPT="$SCRIPT_DIR/adb_webdav_finder.py"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VIRTUAL_ENV="$PROJECT_ROOT/.venv"
 
-/usr/bin/python3 "$PY_SCRIPT" restart
+if [ -d "$VIRTUAL_ENV" ]; then
+    PYTHON_EXE="$VIRTUAL_ENV/bin/python3"
+else
+    PYTHON_EXE="/usr/bin/python3"
+fi
+
+"$PYTHON_EXE" "$SCRIPT_DIR/adb_webdav_finder.py" restart
 
 echo "Mounted at ~/WirePhone"
-echo "If Finder does not open, run: open ~/WirePhone"

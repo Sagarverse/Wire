@@ -1,4 +1,4 @@
-package com.example.wire
+package dev.sagarm.wire
 
 import android.app.Activity
 import android.content.ClipboardManager

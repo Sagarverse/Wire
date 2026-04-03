@@ -23,7 +23,7 @@ subprojects {
     if (name == "qr_code_scanner") {
         plugins.withId("com.android.library") {
             extensions.configure<com.android.build.gradle.LibraryExtension> {
-                namespace = "com.example.wire.qr_code_scanner"
+                namespace = "dev.sagarm.wire.qr_code_scanner"
             }
         }
     }
@@ -33,7 +33,7 @@ subprojects {
 }
 
 subprojects {
-    val useJvm8 = name in setOf("receive_sharing_intent", "flutter_webrtc", "desktop_drop")
+    val useJvm8 = name in setOf("receive_sharing_intent", "flutter_webrtc", "desktop_drop", "mobile_scanner")
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions {
             jvmTarget.set(if (useJvm8) JvmTarget.JVM_1_8 else JvmTarget.JVM_17)

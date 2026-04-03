@@ -1,16 +1,12 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../services/websocket_service.dart';
+import 'package:provider/provider.dart';
+import '../../providers/sms_provider.dart';
+import '../widgets/glass_card.dart';
+import '../../widgets/liquid_background.dart';
 
 class SmsPage extends StatefulWidget {
-  final WebSocketService webSocketService;
-  final String deviceId;
-
-  const SmsPage({
-    super.key,
-    required this.webSocketService,
-    required this.deviceId,
-  });
+  final EdgeInsets? padding;
+  const SmsPage({super.key, this.padding});
 
   @override
   State<SmsPage> createState() => _SmsPageState();
@@ -19,71 +15,20 @@ class SmsPage extends StatefulWidget {
 class _SmsPageState extends State<SmsPage> {
   final TextEditingController _numberController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
-  List<Map<String, dynamic>> _smsList = [];
-  bool _isLoading = true;
-  String? _error;
-  StreamSubscription? _wsSub;
-
-  @override
-  void initState() {
-    super.initState();
-    _wsSub = widget.webSocketService.messages.listen(_handleMessage);
-    _fetchSms();
-  }
 
   @override
   void dispose() {
     _numberController.dispose();
     _messageController.dispose();
-    _wsSub?.cancel();
     super.dispose();
   }
 
-  void _fetchSms() {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    widget.webSocketService.send({
-      'type': 'sms_fetch_request',
-      'from': widget.deviceId,
-    });
-  }
-
-  void _handleMessage(Map<String, dynamic> message) {
-    if (!mounted) return;
-    final type = message['type']?.toString() ?? '';
-
-    if (type == 'sms_list') {
-      final data = message['data'] as List<dynamic>?;
-      if (data != null) {
-        setState(() {
-          _smsList = data
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
-          _isLoading = false;
-        });
-      }
-    } else if (type == 'sms_error') {
-      setState(() {
-        _error = message['message']?.toString() ?? 'Unknown error fetching SMS';
-        _isLoading = false;
-      });
-    }
-  }
-
-  void _sendSms() {
+  void _sendSms(SmsProvider provider) {
     final number = _numberController.text.trim();
     final message = _messageController.text.trim();
     if (number.isEmpty || message.isEmpty) return;
 
-    widget.webSocketService.send({
-      'type': 'sms_send_request',
-      'number': number,
-      'message': message,
-      'from': widget.deviceId,
-    });
-
+    provider.sendMessage(number, message);
     _messageController.clear();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Sending SMS...')),
@@ -95,49 +40,66 @@ class _SmsPageState extends State<SmsPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Messages'),
+        backgroundColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchSms,
-            tooltip: 'Refresh',
+          Consumer<SmsProvider>(
+            builder: (context, provider, _) => IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: provider.fetchMessages,
+              tooltip: 'Refresh',
+            ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_error != null)
-            Container(
-              padding: const EdgeInsets.all(8),
-              color: scheme.error.withValues(alpha: 0.15),
-              width: double.infinity,
-              child: Text(
-                _error!,
-                style: TextStyle(color: scheme.error),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _smsList.isEmpty
-                ? Center(
-                    child: Text(
-                      'No recent messages found.',
-                      style: TextStyle(
-                        color: scheme.onSurface.withValues(alpha: 0.54),
+      body: LiquidBackground(
+        child: Column(
+          children: [
+            Expanded(
+              child: Consumer<SmsProvider>(
+                builder: (context, provider, _) {
+                  if (provider.isLoading && provider.messages.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (provider.error != null && provider.messages.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline_rounded, size: 48, color: scheme.error),
+                          const SizedBox(height: 16),
+                          Text(provider.error!, style: TextStyle(color: scheme.error)),
+                          TextButton(
+                            onPressed: provider.fetchMessages,
+                            child: const Text('Try Again'),
+                          ),
+                        ],
                       ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _smsList.length,
+                    );
+                  }
+
+                  if (provider.messages.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'No recent messages.',
+                        style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5)),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(20),
+                    reverse: false, // We'll sort by date desc but display top-down or bottom-up? 
+                    // Usually chat is reverse true, but provider already sorted.
+                    itemCount: provider.messages.length,
                     itemBuilder: (context, index) {
-                      final sms = _smsList[index];
+                      final sms = provider.messages[index];
                       final isSent = sms['isSent'] == true;
-                      final senderName =
-                          sms['senderName']?.toString() ??
+                      final senderName = sms['senderName']?.toString() ??
                           sms['address']?.toString() ??
                           'Unknown';
                       final body = sms['body']?.toString() ?? '';
@@ -146,121 +108,122 @@ class _SmsPageState extends State<SmsPage> {
                       );
 
                       return Align(
-                        alignment: isSent
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSent
-                                ? scheme.primary
-                                : scheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(16).copyWith(
-                              bottomRight: isSent
-                                  ? Radius.zero
-                                  : const Radius.circular(16),
-                              bottomLeft: !isSent
-                                  ? Radius.zero
-                                  : const Radius.circular(16),
+                        alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: MediaQuery.of(context).size.width * 0.75,
                             ),
-                          ),
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.75,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (!isSent) ...[
-                                Text(
-                                  senderName,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: scheme.onSurface.withValues(alpha: 0.7),
+                            child: GlassCard(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              borderRadius: BorderRadius.circular(20).copyWith(
+                                bottomRight: isSent ? Radius.zero : const Radius.circular(20),
+                                bottomLeft: !isSent ? Radius.zero : const Radius.circular(20),
+                              ),
+                              accent: isSent ? scheme.primary : null,
+                              opacity: isSent ? 0.15 : 0.08,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (!isSent)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(
+                                        senderName,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                          color: scheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  Text(
+                                    body,
+                                    style: TextStyle(
+                                      color: scheme.onSurface,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                              ],
-                              Text(
-                                body,
-                                style: TextStyle(
-                                  color: isSent
-                                      ? scheme.onPrimary
-                                      : scheme.onSurface,
-                                ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${date.hour}:${date.minute.toString().padLeft(2, '0')}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: scheme.onSurface.withValues(alpha: 0.4),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${date.hour}:${date.minute.toString().padLeft(2, '0')}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: (isSent ? scheme.onPrimary : scheme.onSurface)
-                                      .withValues(alpha: 0.5),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                       );
                     },
-                  ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: scheme.surface,
-              border: Border(
-                top: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+                  );
+                },
               ),
             ),
-            child: Column(
+            _buildInputArea(scheme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputArea(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+      child: GlassCard(
+        borderRadius: BorderRadius.circular(24),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Column(
+          children: [
+            TextField(
+              controller: _numberController,
+              decoration: InputDecoration(
+                hintText: 'Recipient Number...',
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.3), fontSize: 13),
+              ),
+              style: const TextStyle(fontSize: 14),
+              keyboardType: TextInputType.phone,
+            ),
+            Divider(height: 1, color: scheme.onSurface.withValues(alpha: 0.1)),
+            Row(
               children: [
-                TextField(
-                  controller: _numberController,
-                  decoration: const InputDecoration(
-                    hintText: 'Recipient Phone Number...',
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: InputDecoration(
+                      hintText: 'Type a message...',
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.3), fontSize: 14),
                     ),
+                    maxLines: null,
+                    style: const TextStyle(fontSize: 15),
                   ),
-                  keyboardType: TextInputType.phone,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        decoration: const InputDecoration(
-                          hintText: 'Type a message...',
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
+                Consumer<SmsProvider>(
+                  builder: (context, provider, _) => Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: IconButton.filled(
+                      onPressed: () => _sendSms(provider),
+                      icon: const Icon(Icons.send_rounded, size: 20),
+                      style: IconButton.styleFrom(
+                        backgroundColor: scheme.primary,
+                        foregroundColor: scheme.onPrimary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    FloatingActionButton(
-                      mini: true,
-                      onPressed: _sendSms,
-                      child: const Icon(Icons.send),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

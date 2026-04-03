@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../services/screen_mirror_service.dart';
@@ -19,14 +20,18 @@ class CameraViewerPage extends StatefulWidget {
 class _CameraViewerPageState extends State<CameraViewerPage> {
   RTCVideoRenderer? _renderer;
   bool _isStreaming = false;
+  // ** FIX: Track subscriptions to cancel in dispose **
+  StreamSubscription<MirrorState>? _stateSub;
+  StreamSubscription<RTCVideoRenderer>? _rendererSub;
 
   @override
   void initState() {
     super.initState();
-    _renderer = widget.mirrorService.remoteRenderer;
+    // ** FIX: Use localRenderer for sender, remoteRenderer for receiver **
+    _renderer = widget.mirrorService.localRenderer ?? widget.mirrorService.remoteRenderer;
     _isStreaming = widget.mirrorService.state == MirrorState.streaming;
 
-    widget.mirrorService.stateStream.listen((state) {
+    _stateSub = widget.mirrorService.stateStream.listen((state) {
       if (mounted) {
         setState(() {
           _isStreaming = state == MirrorState.streaming;
@@ -37,13 +42,22 @@ class _CameraViewerPageState extends State<CameraViewerPage> {
       }
     });
 
-    widget.mirrorService.remoteRendererStream.listen((renderer) {
+    _rendererSub = widget.mirrorService.remoteRendererStream.listen((renderer) {
       if (mounted) {
         setState(() {
           _renderer = renderer;
+          _isStreaming = true;
         });
       }
     });
+  }
+
+  @override
+  void dispose() {
+    // ** FIX: Cancel subscriptions to prevent memory leaks **
+    _stateSub?.cancel();
+    _rendererSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -74,20 +88,38 @@ class _CameraViewerPageState extends State<CameraViewerPage> {
       ),
       extendBodyBehindAppBar: true,
       body: Center(
-        child: _isStreaming && _renderer != null
+        child: _renderer != null && (_isStreaming || widget.mirrorService.state == MirrorState.connecting)
             ? RTCVideoView(
                 _renderer!,
                 objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                placeholderBuilder: (context) => const Center(
+                  child: CircularProgressIndicator(color: Colors.white38),
+                ),
               )
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 16),
-                  Text(
-                    'Connecting to camera...',
-                    style: TextStyle(color: Colors.white70),
+                children: [
+                  CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
                   ),
+                  const SizedBox(height: 16),
+                  Text(
+                    widget.mirrorService.state == MirrorState.error
+                        ? 'Connection failed'
+                        : 'Connecting to camera...',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  if (widget.mirrorService.state == MirrorState.error) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        widget.mirrorService.stop();
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text('Close'),
+                    ),
+                  ],
                 ],
               ),
       ),

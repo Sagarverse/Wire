@@ -53,12 +53,22 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Wire needs camera access for scanning pairing QR codes.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wire needs microphone access for VoIP calls.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Wire uses Bluetooth to discover and pair with nearby devices.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Wire needs Accessibility access to mirror keyboard input from your other devices.</string>
+
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Wire needs local network access to discover and sync with your other devices.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_wire._tcp</string>
+		<string>_http._tcp</string>
+	</array>
 
 	<key>CFBundleURLTypes</key>
 	<array>

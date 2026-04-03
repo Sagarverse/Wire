@@ -8,7 +8,9 @@
 PRODUCT_NAME = wire
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.wire
+PRODUCT_BUNDLE_IDENTIFIER = com.sagarm.wire.sync
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 com.sagarm. All rights reserved.
+
+MACOSX_DEPLOYMENT_TARGET = 13.0

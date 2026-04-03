@@ -8,6 +8,9 @@ class PairedDevice {
   final bool isTrusted;
   final String osType;
   final int lastSeenAt;
+  final int? batteryLevel;
+  final bool? isCharging;
+  final int filePort;
 
   PairedDevice({
     required this.deviceId,
@@ -16,6 +19,9 @@ class PairedDevice {
     required this.isTrusted,
     required this.osType,
     required this.lastSeenAt,
+    this.batteryLevel,
+    this.isCharging,
+    this.filePort = 5758,
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,7 +30,9 @@ class PairedDevice {
         'ip': lastIp,
         'trusted': isTrusted,
         'os': osType,
-        'seen': lastSeenAt,
+        'battery': batteryLevel,
+        'charging': isCharging,
+        'filePort': filePort,
       };
 
   factory PairedDevice.fromJson(Map<String, dynamic> json) => PairedDevice(
@@ -34,6 +42,9 @@ class PairedDevice {
         isTrusted: json['trusted'] as bool? ?? false,
         osType: json['os'] as String? ?? 'unknown',
         lastSeenAt: json['seen'] as int? ?? 0,
+        batteryLevel: json['battery'] as int?,
+        isCharging: json['charging'] as bool?,
+        filePort: json['filePort'] as int? ?? 5758,
       );
 
   PairedDevice copyWith({
@@ -42,6 +53,9 @@ class PairedDevice {
     bool? isTrusted,
     String? osType,
     int? lastSeenAt,
+    int? batteryLevel,
+    bool? isCharging,
+    int? filePort,
   }) {
     return PairedDevice(
       deviceId: deviceId,
@@ -50,6 +64,9 @@ class PairedDevice {
       isTrusted: isTrusted ?? this.isTrusted,
       osType: osType ?? this.osType,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      batteryLevel: batteryLevel ?? this.batteryLevel,
+      isCharging: isCharging ?? this.isCharging,
+      filePort: filePort ?? this.filePort,
     );
   }
 }
@@ -143,6 +160,14 @@ class PairingService {
       return d.isTrusted;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<void> renameDevice(String deviceId, String newName) async {
+    final idx = _devices.indexWhere((d) => d.deviceId == deviceId);
+    if (idx >= 0) {
+      _devices[idx] = _devices[idx].copyWith(name: newName);
+      await _save();
     }
   }
 }

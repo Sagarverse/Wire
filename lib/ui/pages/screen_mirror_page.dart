@@ -7,10 +7,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../services/screen_mirror_service.dart';
 import '../widgets/glass_card.dart';
 
-/// Full-screen screen mirror viewer (macOS/receiver side).
-/// Displays the remote device's screen via WebRTC, captures
-/// pointer events and forwards them as touch, and supports
-/// dropping local files to send them to the remote device.
+/// Full-screen screen mirror viewer.
+/// Works for both sender (Android showing local preview) and
+/// receiver (macOS showing remote stream).
 class ScreenMirrorPage extends StatefulWidget {
   final ScreenMirrorService mirrorService;
   final RTCVideoRenderer initialRenderer;
@@ -35,7 +34,8 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
   late StreamSubscription _stateSub;
   late StreamSubscription _rendererSub;
 
-  MirrorState _state = MirrorState.streaming;
+  // ** FIX: Use actual current state instead of assuming streaming **
+  late MirrorState _state;
   bool _dragActive = false;
   bool _showControls = true;
   Timer? _controlHideTimer;
@@ -47,6 +47,8 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
   void initState() {
     super.initState();
     _renderer = widget.initialRenderer;
+    _state = widget.mirrorService.state;
+    
     _stateSub = widget.mirrorService.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
     });
@@ -92,7 +94,7 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: scheme.surface,
+      backgroundColor: Colors.black,
       body: DropTarget(
         onDragEntered: (_) => setState(() => _dragActive = true),
         onDragExited: (_) => setState(() => _dragActive = false),
@@ -111,10 +113,10 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
             children: [
               // ── VIDEO FEED ──────────────────────────────────────────────
               Positioned.fill(
-                child: _state == MirrorState.connecting
-                    ? _buildConnecting(scheme)
-                    : _state == MirrorState.error
+                child: _state == MirrorState.error
                     ? _buildError(scheme)
+                    : _state == MirrorState.idle
+                    ? _buildConnecting(scheme) // Show connecting if we haven't started yet
                     : LayoutBuilder(
                         builder: (context, constraints) => Listener(
                           key: _mirrorKey,
@@ -126,8 +128,24 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
                             objectFit: RTCVideoViewObjectFit
                                 .RTCVideoViewObjectFitContain,
                             placeholderBuilder: (context) => Center(
-                              child: CircularProgressIndicator(
-                                color: scheme.onSurface.withValues(alpha: 0.30),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(
+                                    color: scheme.onSurface.withValues(alpha: 0.30),
+                                    strokeWidth: 2,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _state == MirrorState.connecting
+                                        ? 'Establishing connection…'
+                                        : 'Loading video feed…',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.5),
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -193,7 +211,10 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
               AnimatedOpacity(
                 opacity: _showControls ? 1 : 0,
                 duration: const Duration(milliseconds: 250),
-                child: _buildControls(scheme),
+                child: IgnorePointer(
+                  ignoring: !_showControls,
+                  child: _buildControls(scheme),
+                ),
               ),
             ],
           ),
@@ -211,49 +232,78 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [scheme.surface.withValues(alpha: 0.7), Colors.transparent],
+              colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
             ),
           ),
           padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
           child: Row(
             children: [
-              Icon(Icons.cast_connected, color: scheme.onSurface, size: 20),
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                onPressed: () {
+                  widget.mirrorService.stop();
+                  widget.onStop();
+                  Navigator.of(context).pop();
+                },
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.cast_connected, color: Colors.white, size: 20),
               const SizedBox(width: 10),
-              Text(
+              const Text(
                 'Screen Mirror',
                 style: TextStyle(
-                  color: scheme.onSurface,
+                  color: Colors.white,
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
                 ),
               ),
               const Spacer(),
               // Live indicator
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: scheme.error,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.circle, color: scheme.onError, size: 8),
-                    const SizedBox(width: 4),
-                    Text(
-                      'LIVE',
-                      style: TextStyle(
-                        color: scheme.onError,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+              if (_state == MirrorState.streaming)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.circle, color: Colors.white, size: 8),
+                      SizedBox(width: 4),
+                      Text(
+                        'LIVE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'CONNECTING',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
                     ),
-                  ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -264,7 +314,7 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
             gradient: LinearGradient(
               begin: Alignment.bottomCenter,
               end: Alignment.topCenter,
-              colors: [scheme.surface.withValues(alpha: 0.7), Colors.transparent],
+              colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
             ),
           ),
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -280,11 +330,11 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.upload, color: scheme.onSurface.withValues(alpha: 0.54), size: 16),
+                    Icon(Icons.upload, color: Colors.white.withValues(alpha: 0.54), size: 16),
                     const SizedBox(width: 6),
                     Text(
                       'Drop files here to send',
-                      style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.54), fontSize: 12),
                     ),
                   ],
                 ),
@@ -303,18 +353,18 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color: scheme.error.withValues(alpha: 0.85),
+                    color: Colors.red.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.stop_circle, color: scheme.onError, size: 18),
-                      const SizedBox(width: 6),
+                      Icon(Icons.stop_circle, color: Colors.white, size: 18),
+                      SizedBox(width: 6),
                       Text(
                         'Stop',
                         style: TextStyle(
-                          color: scheme.onError,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -334,11 +384,11 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: scheme.onSurface.withValues(alpha: 0.38), strokeWidth: 2),
+          const CircularProgressIndicator(color: Colors.white38, strokeWidth: 2),
           const SizedBox(height: 20),
           Text(
             'Connecting to remote screen…',
-            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.54), fontSize: 16),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.54), fontSize: 16),
           ),
         ],
       ),
@@ -350,11 +400,11 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.wifi_off, color: scheme.onSurface.withValues(alpha: 0.24), size: 64),
+          Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.24), size: 64),
           const SizedBox(height: 20),
           Text(
             'Mirror connection lost',
-            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.54), fontSize: 16),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.54), fontSize: 16),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -362,7 +412,11 @@ class _ScreenMirrorPageState extends State<ScreenMirrorPage>
               backgroundColor: scheme.primary,
               foregroundColor: scheme.onPrimary,
             ),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              widget.mirrorService.stop();
+              widget.onStop();
+              Navigator.of(context).pop();
+            },
             icon: const Icon(Icons.close),
             label: const Text('Close'),
           ),

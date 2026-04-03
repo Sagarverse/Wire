@@ -1,4 +1,4 @@
-package com.example.wire
+package dev.sagarm.wire
 
 import android.app.Service
 import android.content.Context
@@ -34,7 +34,7 @@ class FloatingDockHandler {
     fun setupChannels(flutterEngine: FlutterEngine, context: Context) {
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.wire/floating-dock")
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.sagarm.wire/floating-dock")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "show" -> {
@@ -76,7 +76,7 @@ class FloatingDockHandler {
                 }
             }
 
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.wire/floating-dock-events")
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.sagarm.wire/floating-dock-events")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events

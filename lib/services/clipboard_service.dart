@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 class ClipboardService {
   ClipboardService(
     this._channel, {
-    this.pollInterval = const Duration(milliseconds: 100),
+    this.pollInterval = const Duration(milliseconds: 1500),
   });
 
   final MethodChannel _channel;
@@ -18,39 +18,47 @@ class ClipboardService {
   String? _lastRemoteText;
   DateTime? _lastRemoteAt;
   StreamSubscription? _eventSub;
+  bool _started = false;
 
   Stream<String> get onClipboardChanged => _controller.stream;
 
   Future<void> start() async {
+    if (_started) return;
+    _started = true;
+
+    // Try native event channel first (faster, less CPU)
     _eventSub ??= _eventChannel.receiveBroadcastStream().listen(
       (event) {
         if (event is String && event.isNotEmpty) {
-          if (event == _lastLocalText || event == _lastRemoteText) {
-            return;
-          }
-          _lastLocalText = event;
-          _controller.add(event);
+          _onNewClipboardText(event);
         }
       },
       onError: (_) {
-        // ignore
+        // Native event channel not available, rely on polling
       },
     );
 
+    // Polling as a reliable fallback (1.5s interval to reduce CPU load)
     _timer ??= Timer.periodic(pollInterval, (_) async {
       final text = await getClipboardText();
-      if (text == null || text.isEmpty) {
-        return;
-      }
-      if (text == _lastLocalText || text == _lastRemoteText) {
-        return;
-      }
-      _lastLocalText = text;
-      _controller.add(text);
+      if (text == null || text.isEmpty) return;
+      _onNewClipboardText(text);
     });
   }
 
+  void _onNewClipboardText(String text) {
+    if (text == _lastLocalText || text == _lastRemoteText) return;
+    // Avoid re-emitting text that was just set from remote
+    if (_lastRemoteAt != null &&
+        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 500) {
+      return;
+    }
+    _lastLocalText = text;
+    _controller.add(text);
+  }
+
   void stop() {
+    _started = false;
     _timer?.cancel();
     _timer = null;
     _eventSub?.cancel();
@@ -68,6 +76,7 @@ class ClipboardService {
 
   Future<void> setClipboardText(String text) async {
     _lastRemoteText = text;
+    _lastLocalText = text; // Also mark as local to prevent re-detection
     _lastRemoteAt = DateTime.now();
     try {
       await _channel.invokeMethod('setClipboardText', {'text': text});
@@ -84,7 +93,7 @@ class ClipboardService {
     if (text.isEmpty) return true;
     if (text == _lastLocalText || text == _lastRemoteText) return true;
     if (_lastRemoteAt != null &&
-        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 800) {
+        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 500) {
       return true;
     }
     return false;

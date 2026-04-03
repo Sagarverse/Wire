@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 enum MirrorState { idle, connecting, streaming, error }
@@ -30,6 +31,7 @@ class ScreenMirrorService {
       _remoteRendererController.stream;
   MirrorState get state => _state;
   RTCVideoRenderer? get remoteRenderer => _remoteRenderer;
+  RTCVideoRenderer? get localRenderer => _localRenderer;
 
   static const _iceServers = {
     'iceServers': [
@@ -69,6 +71,7 @@ class ScreenMirrorService {
   }
 
   /// Called by the SENDER (Android) to start streaming its screen.
+  /// Returns the LOCAL renderer (preview of what's being sent).
   Future<RTCVideoRenderer> startSending() async {
     await _resetForNewSession();
     _setState(MirrorState.connecting);
@@ -86,7 +89,7 @@ class ScreenMirrorService {
           'frameRate': '30',
         },
       },
-      'audio': false,
+      'audio': true,
     });
 
     _localRenderer!.srcObject = _localStream;
@@ -100,11 +103,13 @@ class ScreenMirrorService {
     await _pc!.setLocalDescription(offer);
     onSendSignal({'type': 'screen_offer', 'sdp': offer.sdp, 'from': deviceId});
 
-    _setState(MirrorState.streaming);
+    // ** FIX: Don't set streaming yet - wait for answer and ICE to complete **
+    // State will be set to streaming when onTrack fires or answer is received
     return _localRenderer!;
   }
 
   /// Called by the SENDER (Android) to start streaming its camera.
+  /// Returns the LOCAL renderer (preview of camera feed).
   Future<RTCVideoRenderer> startSendingCamera() async {
     await _resetForNewSession();
     _setState(MirrorState.connecting);
@@ -123,7 +128,7 @@ class ScreenMirrorService {
         },
         'facingMode': 'user',
       },
-      'audio': false,
+      'audio': true,
     });
 
     _localRenderer!.srcObject = _localStream;
@@ -137,13 +142,16 @@ class ScreenMirrorService {
     await _pc!.setLocalDescription(offer);
     onSendSignal({'type': 'camera_offer', 'sdp': offer.sdp, 'from': deviceId});
 
-    _setState(MirrorState.streaming);
+    // ** FIX: Don't set streaming yet - connecting until answer received **
     return _localRenderer!;
   }
 
   Future<void> switchCamera() async {
     if (_localStream != null) {
-      Helper.switchCamera(_localStream!.getVideoTracks().first);
+      final videoTracks = _localStream!.getVideoTracks();
+      if (videoTracks.isNotEmpty) {
+        Helper.switchCamera(videoTracks.first);
+      }
     }
   }
 
@@ -162,7 +170,7 @@ class ScreenMirrorService {
 
     await _pc!.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
     _remoteDescriptionSet = true;
-    _drainCandidates();
+    await _drainCandidates();
 
     final answer = await _pc!.createAnswer({});
     await _pc!.setLocalDescription(answer);
@@ -177,9 +185,20 @@ class ScreenMirrorService {
 
   /// Called on sender when it receives the answer.
   Future<void> receiveAnswer(String sdp) async {
-    await _pc?.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
-    _remoteDescriptionSet = true;
-    _drainCandidates();
+    if (_pc == null) return;
+    try {
+      await _pc!.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
+      _remoteDescriptionSet = true;
+      await _drainCandidates();
+      
+      // If we've already received tracks or connection is up, set streaming
+      if (_pc!.connectionState == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        _setState(MirrorState.streaming);
+      }
+    } catch (e) {
+      debugPrint('Error receiving answer: $e');
+      _setState(MirrorState.error);
+    }
   }
 
   /// Handle incoming ICE candidates from the remote peer.
@@ -218,19 +237,31 @@ class ScreenMirrorService {
   }
 
   Future<void> stop() async {
-    _localStream?.getTracks().forEach((t) => t.stop());
-    await _localStream?.dispose();
+    try {
+      _localStream?.getTracks().forEach((t) => t.stop());
+    } catch (_) {}
+    try {
+      await _localStream?.dispose();
+    } catch (_) {}
     _localStream = null;
 
-    await _localRenderer?.dispose();
+    try {
+      await _localRenderer?.dispose();
+    } catch (_) {}
     _localRenderer = null;
 
-    await _remoteRenderer?.dispose();
+    try {
+      await _remoteRenderer?.dispose();
+    } catch (_) {}
     _remoteRenderer = null;
 
-    await _pc?.close();
+    try {
+      await _pc?.close();
+    } catch (_) {}
     _pc = null;
 
+    _remoteDescriptionSet = false;
+    _remoteCandidatesBuffer.clear();
     _setState(MirrorState.idle);
     onSendSignal({'type': 'screen_stop', 'from': deviceId});
   }
@@ -261,6 +292,8 @@ class ScreenMirrorService {
     _pc!.onConnectionState = (state) {
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
         _setState(MirrorState.error);
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        _setState(MirrorState.streaming);
       }
     };
 
@@ -274,6 +307,7 @@ class ScreenMirrorService {
   }
 
   void _setState(MirrorState s) {
+    if (_state == s) return;
     _state = s;
     _stateController.add(s);
   }

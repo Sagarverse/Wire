@@ -1,36 +1,37 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'websocket_service.dart';
-import 'clipboard_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class BackgroundService {
-  static const String notificationChannelId = 'wire_background';
-  static const int notificationId = 888;
+  static const notificationChannelId = 'my_foreground';
+  static const notificationId = 888;
+  
+  // These keys are stored to share state between main app and background isolate
+  static const String keyPeerHost = 'last_peer_host';
+  static const String keySyncPaused = 'sync_paused';
+  static const String keySilentClipboard = 'silent_clipboard';
 
   Future<void> init() async {
     final service = FlutterBackgroundService();
 
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       notificationChannelId,
-      'Wire Sync Background',
-      description: 'Maintains connectivity for instant sync',
+      'Wire Sync Active',
+      description: 'Maintains background synchronization.',
       importance: Importance.low,
     );
 
-    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-        FlutterLocalNotificationsPlugin();
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
     if (Platform.isAndroid) {
       await flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >()
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
     }
 
@@ -41,151 +42,147 @@ class BackgroundService {
         isForegroundMode: true,
         notificationChannelId: notificationChannelId,
         initialNotificationTitle: 'Wire Sync',
-        initialNotificationContent: 'Running in background',
+        initialNotificationContent: 'Sync service active',
         foregroundServiceNotificationId: notificationId,
       ),
-      iosConfiguration: IosConfiguration(
-        autoStart: true,
-        onForeground: onStart,
-        onBackground: onIosBackground,
-      ),
+      iosConfiguration: IosConfiguration(),
     );
+    
+    debugPrint('Background service configured');
   }
 
   Future<void> start() async {
     final service = FlutterBackgroundService();
-    if (!(await service.isRunning())) {
-      await service.startService();
-    }
+    await service.startService();
   }
 
-  Future<void> stop() async {
+  static void savePeerHost(String host) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyPeerHost, host);
+    // Tell the background service to reconnect
     final service = FlutterBackgroundService();
-    service.invoke('stopService');
-  }
-}
-
-@pragma('vm:entry-point')
-void onStart(ServiceInstance service) async {
-  DartPluginRegistrant.ensureInitialized();
-  WidgetsFlutterBinding.ensureInitialized();
-
-  if (service is AndroidServiceInstance) {
-    service.on('setAsForeground').listen((event) {
-      service.setAsForegroundService();
-    });
-
-    service.on('setAsBackground').listen((event) {
-      service.setAsBackgroundService();
-    });
+    service.invoke('reconnect', {'host': host});
   }
 
-  service.on('stopService').listen((event) {
-    service.stopSelf();
-  });
+  @pragma('vm:entry-point')
+  static void onStart(ServiceInstance service) async {
+    DartPluginRegistrant.ensureInitialized();
 
-  // Pull preferences
-  final prefs = await SharedPreferences.getInstance();
-  final peerHost = prefs.getString('peer_host') ?? '';
-  final clipboardEnabled = prefs.getBool('clipboard_history_enabled') ?? true;
-
-  if (peerHost.isEmpty) {
-    return; // Can't sync without a peer
-  }
-
-  // Initialize independent services for background isolate
-  final platformChannel = const MethodChannel('wire/platform');
-  final webSocketService = WebSocketService(port: 5757);
-  final clipboardService = ClipboardService(platformChannel);
-
-  // Connect to peer right away
-  try {
-    await webSocketService.connectToPeer(peerHost);
-    webSocketService.send({
-      'type': 'hello',
-      'host': 'BackgroundSync', // dummy host
-      'filePort': 5758,
-      'from': 'background_isolate',
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    
+    // Background Isolate Specific Services
+    final platform = const MethodChannel('wire/platform');
+    final wsService = _BackgroundWsService();
+    
+    service.on('reconnect').listen((event) {
+       final host = event?['host']?.toString();
+       if (host != null) wsService.connect(host);
     });
-  } catch (_) {}
 
-  // Keep alive timer
-  Timer.periodic(const Duration(seconds: 30), (timer) async {
-    if (service is AndroidServiceInstance) {
-      if (await service.isForegroundService()) {
-        service.setForegroundNotificationInfo(
-          title: 'Wire Sync Active',
-          content: 'Ecosystem synchronized',
-        );
-      }
-    }
+    service.on('stopService').listen((event) {
+      service.stopSelf();
+    });
 
-    if (!webSocketService.isClientConnected) {
-      try {
-        await webSocketService.connectToPeer(peerHost);
-      } catch (_) {}
-    }
-  });
+    // Initial connection attempt from storage
+    final prefs = await SharedPreferences.getInstance();
+    final host = prefs.getString(keyPeerHost);
+    if (host != null) wsService.connect(host);
 
-  if (clipboardEnabled) {
-    await clipboardService.start();
-    String lastClipboard = '';
-
-    // Background Isolate uses SharedPreferences to receive clipboard data from SyncActivity
-    // since native EventChannels aren't registered by default in the background engine.
+    // PERSISTENT CLIPBOARD MONITORING
+    // On Android, we can poll the clipboard in background within this isolate.
+    // Note: Since Android 10+, clipboard access is only for foreground apps.
+    // However, if we're a foreground service, we might still have access or 
+    // work around it via Accessibility Services (which we already have for mouse input).
+    
     Timer.periodic(const Duration(seconds: 2), (timer) async {
-      if (!webSocketService.isClientConnected) return;
-      try {
-        await prefs.reload();
-        final bgText = prefs.getString('background_clipboard') ?? '';
-        if (bgText.isNotEmpty &&
-            bgText != lastClipboard &&
-            !clipboardService.shouldIgnoreIncoming(bgText)) {
-          lastClipboard = bgText;
-          clipboardService.markLocal(bgText);
-          webSocketService.send({
-            'type': 'clipboard',
-            'text': bgText,
-            'from': 'background_isolate',
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          });
-          await prefs.remove('background_clipboard');
-        }
-
-        // Secondary attempt using standard Flutter Clipboard
-        final clipData = await Clipboard.getData(Clipboard.kTextPlain);
-        final text = clipData?.text ?? '';
-        if (text.isNotEmpty &&
-            text != lastClipboard &&
-            !clipboardService.shouldIgnoreIncoming(text)) {
-          lastClipboard = text;
-          clipboardService.markLocal(text);
-          webSocketService.send({
-            'type': 'clipboard',
-            'text': text,
-            'from': 'background_isolate',
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
-      } catch (_) {}
-    });
-
-    // Also listen to incoming things so we can update the clipboard in background
-    webSocketService.messages.listen((msg) async {
-      final type = msg['type']?.toString() ?? '';
-      if (type == 'clipboard') {
-        final text = msg['text']?.toString() ?? '';
-        if (!clipboardService.shouldIgnoreIncoming(text)) {
-          await clipboardService.setClipboardText(text);
-          lastClipboard = text;
+      if (service is AndroidServiceInstance) {
+        if (await service.isForegroundService()) {
+           try {
+             // Request text from native side (to bypass restriction where possible)
+             final text = await platform.invokeMethod<String>('getClipboardText');
+             if (text != null && text.isNotEmpty) {
+               final last = prefs.getString('bg_last_text');
+               if (text != last) {
+                 await prefs.setString('bg_last_text', text);
+                 wsService.send({'type': 'clipboard', 'text': text});
+               }
+             }
+           } catch (e) {
+             // Silence errors in background loop
+           }
         }
       }
+
+      // Keep connection alive or attempt reconnect
+      if (!wsService.isConnected && host != null) {
+        wsService.connect(host);
+      }
     });
+
+    // Handle WebSocket messages in background channel
+    wsService.onMessage = (message) async {
+       final type = message['type']?.toString();
+       if (type == 'clipboard') {
+          final text = message['text']?.toString();
+          if (text != null) {
+             await platform.invokeMethod('setClipboardText', {'text': text});
+             await prefs.setString('bg_last_text', text);
+             
+             // Update notification
+             if (service is AndroidServiceInstance) {
+                flutterLocalNotificationsPlugin.show(
+                  notificationId,
+                  'Wire Sync',
+                  'Synced: ${text.length > 20 ? '${text.substring(0, 17)}...' : text}',
+                  const NotificationDetails(
+                    android: AndroidNotificationDetails(
+                      notificationChannelId,
+                      'Wire Sync status',
+                      icon: 'ic_bg_service_small',
+                      ongoing: true,
+                    ),
+                  ),
+                );
+             }
+          }
+       }
+    };
   }
 }
 
-@pragma('vm:entry-point')
-bool onIosBackground(ServiceInstance service) {
-  return true;
+// Minimal WebSocket handler for background isolate
+class _BackgroundWsService {
+  WebSocket? _socket;
+  bool _connecting = false;
+  Function(Map<String, dynamic>)? onMessage;
+
+  bool get isConnected => _socket?.readyState == WebSocket.open;
+
+  void connect(String host) async {
+    if (_connecting || isConnected) return;
+    _connecting = true;
+    try {
+      _socket = await WebSocket.connect('ws://$host:5757').timeout(const Duration(seconds: 5));
+      _socket?.listen(
+        (data) {
+          try {
+            final Map<String, dynamic> msg = Map<String, dynamic>.from(jsonDecode(data));
+            onMessage?.call(msg);
+          } catch (_) {}
+        },
+        onDone: () => _socket = null,
+        onError: (_) => _socket = null,
+      );
+    } catch (_) {
+    } finally {
+      _connecting = false;
+    }
+  }
+
+
+  void send(Map<String, dynamic> msg) {
+    if (isConnected) {
+      _socket?.add(jsonEncode(msg));
+    }
+  }
 }

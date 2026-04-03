@@ -59,7 +59,7 @@ class ConfirmationDialog extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 380),
         child: GlassCard(
           accent: scheme.secondary,
-          borderRadius: 24,
+          borderRadius: BorderRadius.circular(24),
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -1,500 +1,299 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../widgets/glass_card.dart';
-import '../widgets/confirmation_dialog.dart';
+import '../../widgets/liquid_background.dart';
+import '../../providers/app_state.dart';
+import '../../controllers/clipboard_controller.dart';
+import '../../providers/file_transfer_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import '../theme/app_theme.dart';
+import 'device_pairing_page.dart';
+import '../widgets/qr_pairing_dialog.dart';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
+import '../../services/permissions_service.dart';
 
 class SettingsPage extends StatelessWidget {
-  final bool autoConnect;
-  final bool discoveryEnabled;
-  final bool clipboardSync;
-  final bool notificationSync;
-  final bool transferHistory;
-  final bool silentClipboard;
-  final bool labsMirrorFeatures;
-  final bool labsStudentHub;
-  final bool labsMountFinder;
-  final String deviceId;
-  final ThemeMode themeMode;
-  final VoidCallback? onHideApp;
-  final VoidCallback onClearClipboardHistory;
-  final VoidCallback onClearTransferHistory;
-  final VoidCallback? onClearNotificationHistory;
-  final Function(ThemeMode) onThemeModeChanged;
-  final Function(bool) onToggleAutoConnect;
-  final Function(bool) onToggleDiscovery;
-  final Function(bool) onToggleClipboardSync;
-  final Function(bool) onToggleNotificationSync;
-  final Function(bool) onToggleTransferHistory;
-  final Function(bool) onToggleSilentClipboard;
-  final Function(bool) onToggleLabsMirrorFeatures;
-  final Function(bool) onToggleLabsStudentHub;
-  final Function(bool) onToggleLabsMountFinder;
+  final VoidCallback onResetApp;
+  final EdgeInsets? padding;
 
   const SettingsPage({
     super.key,
-    required this.autoConnect,
-    required this.discoveryEnabled,
-    required this.clipboardSync,
-    required this.notificationSync,
-    required this.transferHistory,
-    required this.silentClipboard,
-    required this.labsMirrorFeatures,
-    required this.labsStudentHub,
-    required this.labsMountFinder,
-    required this.deviceId,
-    required this.themeMode,
-    this.onHideApp,
-    required this.onClearClipboardHistory,
-    required this.onClearTransferHistory,
-    this.onClearNotificationHistory,
-    required this.onThemeModeChanged,
-    required this.onToggleAutoConnect,
-    required this.onToggleDiscovery,
-    required this.onToggleClipboardSync,
-    required this.onToggleNotificationSync,
-    required this.onToggleTransferHistory,
-    required this.onToggleSilentClipboard,
-    required this.onToggleLabsMirrorFeatures,
-    required this.onToggleLabsStudentHub,
-    required this.onToggleLabsMountFinder,
+    required this.onResetApp,
+    this.padding,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-          child: Row(
-            children: [
-              Expanded(
+    return Consumer3<AppState, ClipboardController, FileTransferProvider>(
+      builder: (context, appState, clipboardController, fileTransferProvider, _) {
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: LiquidBackground(
+            child: Padding(
+              padding: padding ?? const EdgeInsets.only(bottom: 120),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 60, 24, 40),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Settings',
-                      style: TextStyle(
-                        color: scheme.onSurface,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.4,
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 32),
+                      child: Text(
+                        'Settings',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          color: scheme.onSurface,
+                          letterSpacing: -1.0,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Personalize appearance, behavior, and power tools.',
-                      style: TextStyle(
-                        color: scheme.onSurface.withValues(alpha: 0.62),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: scheme.primary.withValues(alpha: isDark ? 0.22 : 0.12),
-                  border: Border.all(
-                    color: scheme.primary.withValues(alpha: isDark ? 0.4 : 0.24),
-                  ),
-                ),
-                child: Icon(Icons.tune_rounded, color: scheme.primary),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-            children: [
-              _buildSettingSection(
-                context: context,
-                title: 'Appearance',
-                children: [
-                  GlassCard(
-                    accent: scheme.secondary,
-                    borderRadius: 20,
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    _buildSection(
+                      context,
+                      title: 'Pairing & Devices',
+                      icon: Icons.phonelink_setup_rounded,
                       children: [
-                        Text(
-                          'Theme Mode',
-                          style: TextStyle(
-                            color: scheme.onSurface,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SegmentedButton<ThemeMode>(
-                          showSelectedIcon: false,
-                          selected: {themeMode},
-                          onSelectionChanged: (value) {
-                            onThemeModeChanged(value.first);
-                          },
-                          segments: const [
-                            ButtonSegment(
-                              value: ThemeMode.system,
-                              icon: Icon(Icons.auto_mode_rounded),
-                              label: Text('System'),
-                            ),
-                            ButtonSegment(
-                              value: ThemeMode.light,
-                              icon: Icon(Icons.light_mode_rounded),
-                              label: Text('Light'),
-                            ),
-                            ButtonSegment(
-                              value: ThemeMode.dark,
-                              icon: Icon(Icons.dark_mode_rounded),
-                              label: Text('Dark'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _buildSettingSection(
-                context: context,
-                title: 'Connectivity',
-                children: [
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Auto Connect',
-                    subtitle: 'Reconnect to last peer on startup',
-                    value: autoConnect,
-                    onChanged: onToggleAutoConnect,
-                    icon: Icons.sync,
-                  ),
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Device Discovery',
-                    subtitle: 'Allow other devices to find you',
-                    value: discoveryEnabled,
-                    onChanged: onToggleDiscovery,
-                    icon: Icons.wifi_tethering_rounded,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _buildSettingSection(
-                context: context,
-                title: 'Data Sync',
-                children: [
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Clipboard Sync',
-                    subtitle: 'Synchronize clipboard across devices',
-                    value: clipboardSync,
-                    onChanged: onToggleClipboardSync,
-                    icon: Icons.content_paste_go_rounded,
-                  ),
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Notification Sync',
-                    subtitle: 'Forward phone notifications to Mac',
-                    value: notificationSync,
-                    onChanged: onToggleNotificationSync,
-                    icon: Icons.notifications_active_rounded,
-                  ),
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Transfer History',
-                    subtitle: 'Keep a record of shared files',
-                    value: transferHistory,
-                    onChanged: onToggleTransferHistory,
-                    icon: Icons.history_rounded,
-                  ),
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Silent Clipboard',
-                    subtitle: 'Sync silently — like Apple Universal Clipboard',
-                    value: silentClipboard,
-                    onChanged: onToggleSilentClipboard,
-                    icon: Icons.notifications_paused_rounded,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _buildSettingSection(
-                context: context,
-                title: 'Utilities',
-                children: [
-                  _buildActionItem(
-                    context: context,
-                    title: 'Clear Clipboard History',
-                    subtitle: 'Delete all locally stored clipboard entries',
-                    icon: Icons.cleaning_services_rounded,
-                    onTap: () async {
-                      final confirmed = await ConfirmationDialog.show(
-                        context,
-                        title: 'Clear Clipboard History?',
-                        message: 'This will permanently delete all clipboard entries. This action cannot be undone.',
-                        confirmText: 'Clear',
-                        icon: Icons.delete_forever_rounded,
-                        iconColor: const Color(0xFFF97316),
-                      );
-                      if (confirmed == true) {
-                        onClearClipboardHistory();
-                      }
-                    },
-                    tint: const Color(0xFFF97316),
-                  ),
-                  _buildActionItem(
-                    context: context,
-                    title: 'Clear Transfer History',
-                    subtitle: 'Remove completed and failed transfer logs',
-                    icon: Icons.layers_clear_rounded,
-                    onTap: () async {
-                      final confirmed = await ConfirmationDialog.show(
-                        context,
-                        title: 'Clear Transfer History?',
-                        message: 'All file transfer logs will be permanently deleted. This action cannot be undone.',
-                        confirmText: 'Clear',
-                        icon: Icons.delete_forever_rounded,
-                        iconColor: const Color(0xFFDC2626),
-                      );
-                      if (confirmed == true) {
-                        onClearTransferHistory();
-                      }
-                    },
-                    tint: const Color(0xFFDC2626),
-                  ),
-                  if (onClearNotificationHistory != null)
-                    _buildActionItem(
-                      context: context,
-                      title: 'Clear Notification History',
-                      subtitle: 'Reset synced notification timeline',
-                      icon: Icons.notifications_off_rounded,
-                      onTap: () async {
-                        final confirmed = await ConfirmationDialog.show(
+                        _buildActionTile(
                           context,
-                          title: 'Clear Notification History?',
-                          message: 'This will remove all synced notification records. This action cannot be undone.',
-                          confirmText: 'Clear',
-                          icon: Icons.delete_forever_rounded,
-                          iconColor: const Color(0xFF7C3AED),
-                        );
-                        if (confirmed == true) {
-                          onClearNotificationHistory!();
-                        }
-                      },
-                      tint: const Color(0xFF7C3AED),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _buildSettingSection(
-                context: context,
-                title: 'Labs',
-                children: [
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Mirror Features (Experimental)',
-                    subtitle: 'Keyboard and camera mirror reliability mode',
-                    value: labsMirrorFeatures,
-                    onChanged: onToggleLabsMirrorFeatures,
-                    icon: Icons.auto_awesome_rounded,
-                  ),
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Student Hub (Experimental)',
-                    subtitle: 'Enable extended study workspace panel',
-                    value: labsStudentHub,
-                    onChanged: onToggleLabsStudentHub,
-                    icon: Icons.school_rounded,
-                  ),
-                  _buildSettingItem(
-                    context: context,
-                    title: 'Finder Mount (Experimental)',
-                    subtitle: 'Enable Android storage mount in Finder',
-                    value: labsMountFinder,
-                    onChanged: onToggleLabsMountFinder,
-                    icon: Icons.usb_rounded,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              if (onHideApp != null)
-                _buildSettingSection(
-                  context: context,
-                  title: 'macOS Options',
-                  children: [
-                    _buildActionItem(
-                      context: context,
-                      title: 'Hide to Menu Bar',
-                      subtitle: 'Keep app running while hidden',
-                      icon: Icons.visibility_off_rounded,
-                      onTap: onHideApp!,
-                      tint: scheme.primary,
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 18),
-              _buildSettingSection(
-                context: context,
-                title: 'Device Info',
-                children: [
-                  GlassCard(
-                    accent: scheme.secondary,
-                    borderRadius: 20,
-                    padding: const EdgeInsets.all(15),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'DEVICE ID',
-                          style: TextStyle(
-                            color: scheme.onSurface.withValues(alpha: 0.48),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          deviceId,
-                          style: TextStyle(
-                            color: scheme.onSurface,
-                            fontSize: 14,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _buildSettingSection(
-                context: context,
-                title: 'About',
-                children: [
-                  GlassCard(
-                    accent: scheme.tertiary,
-                    borderRadius: 20,
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                gradient: LinearGradient(
-                                  colors: [
-                                    scheme.primary.withValues(alpha: 0.9),
-                                    scheme.secondary.withValues(alpha: 0.7),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
+                          title: 'Manage Linked Devices',
+                          subtitle: appState.pairingService.activeDevice != null ? 'Connected to ${appState.pairingService.activeDevice!.name}' : 'No active device linked',
+                          icon: Icons.devices_other_rounded,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => DevicePairingPage(
+                                  pairingService: appState.pairingService,
+                                  discoveredPeers: appState.discoveredPeers,
+                                  localDeviceId: appState.deviceId,
+                                  onMakeActive: (device) => appState.connectToPeer(device.lastIp, targetId: device.deviceId),
+                                  onConnectToPeer: (peer) => appState.connectToPeer(peer.address.address, targetId: peer.deviceId),
                                 ),
                               ),
-                              child: Icon(
-                                Icons.cable_rounded,
-                                color: scheme.onPrimary,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Wire Sync',
-                                    style: TextStyle(
-                                      color: scheme.onSurface,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Version 1.0.0 (Build 1)',
-                                    style: TextStyle(
-                                      color: scheme.onSurface.withValues(alpha: 0.6),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Cross-device clipboard, file transfer, and continuity engine. Seamlessly sync and control between your Mac and Android devices.',
-                          style: TextStyle(
-                            color: scheme.onSurface.withValues(alpha: 0.6),
-                            fontSize: 12.5,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Divider(color: scheme.outline.withValues(alpha: 0.2)),
-                        const SizedBox(height: 8),
-                        Text(
-                          '© 2026 Sagar M. All rights reserved.',
-                          style: TextStyle(
-                            color: scheme.onSurface.withValues(alpha: 0.42),
-                            fontSize: 11,
-                          ),
+                        _buildActionTile(
+                          context,
+                          title: 'Share Pairing Code',
+                          subtitle: 'Show QR code for other devices to scan',
+                          icon: Icons.qr_code_2_rounded,
+                          onTap: () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => QrPairingDialog(
+                                deviceId: appState.deviceId,
+                                deviceName: Platform.isMacOS ? 'Wire Mac' : 'Wire Device',
+                                port: 5757,
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    _buildPermissionSection(context, appState),
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
+                      title: 'Appearance',
+                      icon: Icons.palette_rounded,
+                      children: [
+                        _buildThemeSwitcher(context),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
+                      title: 'Connectivity',
+                      icon: Icons.wifi_tethering_rounded,
+                      children: [
+                        _buildToggleTile(
+                          context,
+                          title: 'Auto-Connect',
+                          subtitle: 'Pair with last device on startup',
+                          value: appState.autoConnectEnabled,
+                          onChanged: (v) => appState.toggleSetting('auto_connect', v),
+                          icon: Icons.bolt_rounded,
+                        ),
+                        _buildToggleTile(
+                          context,
+                          title: 'Discovery',
+                          subtitle: 'Visible to other Wire devices',
+                          value: appState.discoveryEnabled,
+                          onChanged: (v) => appState.toggleSetting('discovery_enabled', v),
+                          icon: Icons.visibility_rounded,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
+                      title: 'Data Sync',
+                      icon: Icons.sync_rounded,
+                      children: [
+                        _buildToggleTile(
+                          context,
+                          title: 'Clipboard',
+                          subtitle: 'Sync text across devices',
+                          value: !appState.isSyncPaused,
+                          onChanged: (v) => appState.toggleSetting('sync_paused', !v),
+                          icon: Icons.content_paste_go_rounded,
+                        ),
+                        _buildToggleTile(
+                          context,
+                          title: 'Notifications',
+                          subtitle: 'Forward mobile alerts to desktop',
+                          value: appState.notificationSyncEnabled,
+                          onChanged: (v) => appState.toggleSetting('notification_sync_enabled', v),
+                          icon: Icons.notifications_active_rounded,
+                        ),
+                        _buildToggleTile(
+                          context,
+                          title: 'Silent Mode',
+                          subtitle: 'No popups for clipboard sync',
+                          value: appState.silentClipboard,
+                          onChanged: (v) => appState.toggleSetting('silent_clipboard', v),
+                          icon: Icons.notifications_paused_rounded,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
+                      title: 'Storage',
+                      icon: Icons.folder_open_rounded,
+                      children: [
+                        _buildActionTile(
+                          context,
+                          title: 'Downloads Root',
+                          subtitle: appState.downloadsPath ?? 'Default (~/Downloads/Wire)',
+                          icon: Icons.folder_special_rounded,
+                          onTap: () async {
+                            String? result = await FilePicker.platform.getDirectoryPath();
+                            if (result != null) {
+                              appState.updateDownloadsPath(result);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
+                      title: 'Experimental Labs',
+                      icon: Icons.science_rounded,
+                      accent: Colors.amber,
+                      children: [
+                        _buildToggleTile(
+                          context,
+                          title: 'Mirroring',
+                          subtitle: 'Screen & input relay (Beta)',
+                          value: appState.labsMirrorFeaturesEnabled,
+                          onChanged: (v) => appState.toggleSetting('labs_mirror_features_enabled', v),
+                          icon: Icons.cast_connected_rounded,
+                        ),
+                        _buildToggleTile(
+                          context,
+                          title: 'Finder Mount',
+                          subtitle: 'Mount phone storage in macOS Finder',
+                          value: appState.labsMountFinderEnabled,
+                          onChanged: (v) => appState.toggleSetting('labs_mount_finder_enabled', v),
+                          icon: Icons.usb_rounded,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
+                      title: 'Maintenance',
+                      icon: Icons.cleaning_services_rounded,
+                      children: [
+                        _buildActionTile(
+                          context,
+                          title: 'Clear Clipboard',
+                          subtitle: 'Delete locally cached text data',
+                          onTap: () => clipboardController.clearHistory(),
+                          icon: Icons.delete_sweep_rounded,
+                          isDestructive: true,
+                        ),
+                        _buildActionTile(
+                          context,
+                          title: 'Reset Transfers',
+                          subtitle: 'Clear all file transfer logs',
+                          onTap: () => fileTransferProvider.clearHistory(),
+                          icon: Icons.history_rounded,
+                          isDestructive: true,
+                        ),
+                        _buildActionTile(
+                          context,
+                          title: 'Restart Experience',
+                          subtitle: 'Delete all app data & re-pair',
+                          onTap: () => _showResetDialog(context),
+                          icon: Icons.restart_alt_rounded,
+                          isDestructive: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 48),
+                    _buildAboutSection(context),
+                  ],
+                ),
               ),
-              const SizedBox(height: 28),
-            ],
+            ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
-  Widget _buildSettingSection({
-    required BuildContext context,
+  Widget _buildSection(
+    BuildContext context, {
     required String title,
+    required IconData icon,
     required List<Widget> children,
+    Color? accent,
   }) {
     final scheme = Theme.of(context).colorScheme;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text(
-            title,
-            style: TextStyle(
-              color: scheme.onSurface.withValues(alpha: 0.56),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: (accent ?? scheme.primary).withValues(alpha: 0.7)),
+              const SizedBox(width: 8),
+              Text(
+                title.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: (accent ?? scheme.primary).withValues(alpha: 0.7),
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
           ),
         ),
-        ...children,
+        GlassCard(
+          padding: EdgeInsets.zero,
+          borderRadius: BorderRadius.circular(24),
+          child: Column(children: children),
+        ),
       ],
     );
   }
 
-  Widget _buildSettingItem({
-    required BuildContext context,
+  Widget _buildToggleTile(
+    BuildContext context, {
     required String title,
     required String subtitle,
     required bool value,
@@ -502,95 +301,307 @@ class SettingsPage extends StatelessWidget {
     required IconData icon,
   }) {
     final scheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        accent: value ? scheme.primary : null,
-        borderRadius: 18,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: (value ? scheme.primary : scheme.outline).withValues(alpha: 0.14),
-            ),
-            child: Icon(icon, color: value ? scheme.primary : scheme.onSurface, size: 20),
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              color: scheme.onSurface,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: TextStyle(
-              color: scheme.onSurface.withValues(alpha: 0.6),
-              fontSize: 12,
-            ),
-          ),
-          trailing: Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: scheme.primary,
-          ),
+    return SwitchListTile(
+      value: value,
+      onChanged: onChanged,
+      activeThumbColor: scheme.primary,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      subtitle: Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13)),
+      secondary: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: (value ? scheme.primary : scheme.onSurface).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
         ),
+        child: Icon(icon, color: value ? scheme.primary : scheme.onSurface.withValues(alpha: 0.4), size: 22),
       ),
     );
   }
 
-  Widget _buildActionItem({
-    required BuildContext context,
+  Widget _buildActionTile(
+    BuildContext context, {
     required String title,
     required String subtitle,
-    required IconData icon,
     required VoidCallback onTap,
-    required Color tint,
+    required IconData icon,
+    bool isDestructive = false,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        borderRadius: 18,
-        accent: tint,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: ListTile(
-          contentPadding: EdgeInsets.zero,
-          onTap: onTap,
-          leading: Container(
-            width: 38,
-            height: 38,
+    final color = isDestructive ? scheme.error : scheme.onSurface;
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
+      subtitle: Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13)),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: color, size: 22),
+      ),
+      trailing: Icon(Icons.chevron_right_rounded, size: 20, color: scheme.onSurface.withValues(alpha: 0.2)),
+    );
+  }
+
+  Widget _buildThemeSwitcher(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppTheme.themeModeNotifier,
+      builder: (context, themeMode, _) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: tint.withValues(alpha: 0.14),
+              color: scheme.onSurface.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, color: tint, size: 20),
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              color: scheme.onSurface,
-              fontWeight: FontWeight.w700,
+            child: SegmentedButton<ThemeMode>(
+              showSelectedIcon: false,
+              selected: {themeMode},
+              onSelectionChanged: (val) => AppTheme.setThemeMode(val.first),
+              style: SegmentedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                selectedBackgroundColor: scheme.primary,
+                selectedForegroundColor: scheme.onPrimary,
+                side: BorderSide.none,
+              ),
+              segments: const [
+                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: Text('Light')),
+                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: Text('Dark')),
+                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.auto_mode_rounded), label: Text('Auto')),
+              ],
             ),
           ),
-          subtitle: Text(
-            subtitle,
-            style: TextStyle(
-              color: scheme.onSurface.withValues(alpha: 0.6),
-              fontSize: 12,
+        );
+      },
+    );
+  }
+
+  Widget _buildAboutSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        children: [
+          Container(
+            width: 90, height: 90,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [scheme.primary, scheme.tertiary],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
+            child: const Icon(Icons.bolt_rounded, size: 50, color: Colors.white),
           ),
-          trailing: Icon(
-            Icons.arrow_forward_ios_rounded,
-            size: 14,
-            color: scheme.onSurface.withValues(alpha: 0.45),
+          const SizedBox(height: 24),
+          const Text(
+            'Wire Sync',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, letterSpacing: -0.5),
+          ),
+          Text(
+            'Version 3.0.0 • Pro Edition',
+            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.4), fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 40),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildAboutLink(Icons.language_rounded, 'Website'),
+              const SizedBox(width: 40),
+              _buildAboutLink(Icons.help_outline_rounded, 'Manual'),
+              const SizedBox(width: 40),
+              _buildAboutLink(Icons.privacy_tip_rounded, 'Privacy'),
+            ],
+          ),
+          const SizedBox(height: 60),
+          Text(
+            'Handcrafted by Antigravity in 2026',
+            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.3), fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutLink(IconData icon, String label) {
+    return Column(
+      children: [
+        Icon(icon, size: 24, color: Colors.grey.withValues(alpha: 0.6)),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.withValues(alpha: 0.6),
+            letterSpacing: 0.5,
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildPermissionSection(BuildContext context, AppState appState) {
+    final permissions = PermissionsService();
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.security_rounded, size: 16, color: scheme.primary.withValues(alpha: 0.7)),
+              const SizedBox(width: 8),
+              Text(
+                'SYSTEM PERMISSIONS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.primary.withValues(alpha: 0.7),
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        GlassCard(
+          padding: EdgeInsets.zero,
+          borderRadius: BorderRadius.circular(24),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                children: [
+                  _buildPermissionTile(
+                    context,
+                    title: 'Connectivity',
+                    subtitle: 'Nearby device discovery',
+                    permission: Permission.bluetoothScan,
+                    onGrant: () async {
+                      await permissions.requestBluetooth();
+                      setState(() {});
+                    },
+                  ),
+                  _buildPermissionTile(
+                    context,
+                    title: 'Messaging',
+                    subtitle: 'Sync SMS & contacts',
+                    permission: Permission.sms,
+                    onGrant: () async {
+                      await permissions.requestSms();
+                      setState(() {});
+                    },
+                  ),
+                  _buildPermissionTile(
+                    context,
+                    title: 'Notifications',
+                    subtitle: 'Real-time sync alerts',
+                    permission: Permission.notification,
+                    onGrant: () async {
+                      await permissions.requestNotifications();
+                      setState(() {});
+                    },
+                  ),
+                  _buildPermissionTile(
+                    context,
+                    title: 'Storage',
+                    subtitle: 'File sharing access',
+                    permission: Permission.storage,
+                    onGrant: () async {
+                      await permissions.requestStorage();
+                      setState(() {});
+                    },
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPermissionTile(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required Permission permission,
+    required VoidCallback onGrant,
+  }) {
+    final permissions = PermissionsService();
+    final scheme = Theme.of(context).colorScheme;
+
+    return FutureBuilder<bool>(
+      future: permissions.checkPermissionStatus(permission),
+      builder: (context, snapshot) {
+        final isGranted = snapshot.data == true;
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          subtitle: Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13)),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: (isGranted ? Colors.green : scheme.onSurface).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isGranted ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+              color: isGranted ? Colors.green : scheme.onSurface.withValues(alpha: 0.4),
+              size: 22,
+            ),
+          ),
+          trailing: isGranted
+              ? null
+              : TextButton(
+                  onPressed: onGrant,
+                  child: const Text('GRANT'),
+                ),
+        );
+      },
+    );
+  }
+
+  void _showResetDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        title: const Text('Factory Reset?'),
+        content: const Text(
+          'This will delete all pairing data, custom settings, and transfer history.',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onResetApp();
+            },
+            child: const Text(
+              'RESET EVERYTHING',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }

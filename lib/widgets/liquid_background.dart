@@ -34,6 +34,9 @@ class _LiquidBackgroundState extends State<LiquidBackground>
     return Stack(
       children: [
         Positioned.fill(
+          child: Container(color: Theme.of(context).colorScheme.surface),
+        ),
+        Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -54,19 +57,25 @@ class _LiquidBackgroundState extends State<LiquidBackground>
             ),
           ),
         ),
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return CustomPaint(
-              painter: LiquidPainter(_controller.value, isDark: isDark),
-              size: Size.infinite,
-            );
-          },
+        // ** FIX: RepaintBoundary isolates liquid animation repaints
+        // from child widget tree — prevents unnecessary child rebuilds **
+        RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return CustomPaint(
+                painter: LiquidPainter(_controller.value, isDark: isDark),
+                size: Size.infinite,
+              );
+            },
+          ),
         ),
         Positioned.fill(
           child: IgnorePointer(
-            child: CustomPaint(
-              painter: GridOverlayPainter(isDark: isDark),
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: GridOverlayPainter(isDark: isDark),
+              ),
             ),
           ),
         ),

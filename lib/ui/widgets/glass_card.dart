@@ -1,139 +1,118 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
 
-class GlassCard extends StatefulWidget {
+class GlassCard extends StatelessWidget {
   final Widget child;
   final double blur;
   final double opacity;
-  final double borderRadius;
+  final BorderRadius? borderRadius;
+  final Border? border;
   final EdgeInsetsGeometry? padding;
+  final List<BoxShadow>? boxShadow;
+  final Color? color;
   final Color? accent;
-  final bool elevated;
-  final bool animateOnHover;
 
   const GlassCard({
     super.key,
     required this.child,
-    this.blur = 14,
+    this.blur = 15.0,
     this.opacity = 0.08,
-    this.borderRadius = 18,
+    this.borderRadius,
+    this.border,
     this.padding,
+    this.boxShadow,
+    this.color,
     this.accent,
-    this.elevated = false,
-    this.animateOnHover = false,
   });
 
   @override
-  State<GlassCard> createState() => _GlassCardState();
-}
-
-class _GlassCardState extends State<GlassCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: AppTheme.animationShort,
-      vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
-      CurvedAnimation(parent: _controller, curve: AppTheme.curveEaseOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = widget.accent ?? scheme.primary;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
-    Widget card = ClipRRect(
-      borderRadius: BorderRadius.circular(widget.borderRadius),
+    return ClipRRect(
+      borderRadius: borderRadius ?? BorderRadius.circular(24),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: widget.blur, sigmaY: widget.blur),
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: Container(
-          padding: widget.padding ?? const EdgeInsets.all(20),
+          padding: padding,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                (isDark ? const Color(0xFF151E2E) : Colors.white).withValues(
-                  alpha: isDark ? 0.76 : 0.92,
+            color: color ?? (isDark 
+              ? Colors.white.withValues(alpha: opacity) 
+              : Colors.black.withValues(alpha: opacity * 0.5)),
+            borderRadius: borderRadius ?? BorderRadius.circular(24),
+            border: border ?? Border.all(
+              color: (accent ?? (isDark ? Colors.white : Colors.black)).withValues(alpha: accent != null ? 0.2 : 0.1),
+              width: accent != null ? 1.5 : 1.2,
+            ),
+            boxShadow: [
+              if (accent != null)
+                BoxShadow(
+                  color: accent!.withValues(alpha: 0.1),
+                  blurRadius: 20,
+                  spreadRadius: -5,
                 ),
-                (isDark ? const Color(0xFF101928) : const Color(0xFFF4F7FD))
-                    .withValues(alpha: isDark ? 0.68 : 0.88),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            border: Border.all(
-              color: accentColor.withValues(alpha: isDark ? 0.16 : 0.14),
-              width: 1,
-            ),
-            boxShadow: widget.elevated
-                ? [
-                    BoxShadow(
-                      color: accentColor.withValues(alpha: isDark ? 0.16 : 0.1),
-                      blurRadius: 28,
-                      offset: const Offset(0, 14),
-                      spreadRadius: -4,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
-                      blurRadius: 22,
-                      offset: const Offset(0, 8),
-                      spreadRadius: -2,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
-                      blurRadius: 12,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : [
-                    BoxShadow(
-                      color: accentColor.withValues(alpha: isDark ? 0.1 : 0.06),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                      spreadRadius: -2,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.05),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                      spreadRadius: -1,
-                    ),
-                  ],
+              if (boxShadow != null) ...boxShadow!,
+            ],
           ),
-          child: widget.child,
+          child: child,
         ),
       ),
     );
+  }
+}
 
-    if (!widget.animateOnHover) {
-      return card;
-    }
+class GlassCardInteractive extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final double blur;
+  final double opacity;
+  final BorderRadius? borderRadius;
+  final EdgeInsetsGeometry? padding;
+  final Color? accent;
 
+  const GlassCardInteractive({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.blur = 15.0,
+    this.opacity = 0.08,
+    this.borderRadius,
+    this.padding,
+    this.accent,
+  });
+
+  @override
+  State<GlassCardInteractive> createState() => _GlassCardInteractiveState();
+}
+
+class _GlassCardInteractiveState extends State<GlassCardInteractive> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) {
-        _controller.forward();
-      },
-      onExit: (_) {
-        _controller.reverse();
-      },
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: card,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _isPressed ? 0.98 : (_isHovered ? 1.02 : 1.0),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          child: GlassCard(
+            blur: widget.blur,
+            opacity: _isHovered ? widget.opacity * 1.5 : widget.opacity,
+            borderRadius: widget.borderRadius,
+            padding: widget.padding,
+            accent: widget.accent,
+            child: widget.child,
+          ),
+        ),
       ),
     );
   }

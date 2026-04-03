@@ -12,6 +12,9 @@ class StatusDash extends StatelessWidget {
   final int? pingMs;
   final bool isSyncing;
 
+  final VoidCallback? onReconnect;
+  final VoidCallback? onDevicesTapped;
+
   const StatusDash({
     super.key,
     required this.deviceName,
@@ -23,6 +26,8 @@ class StatusDash extends StatelessWidget {
     this.remoteIsCharging,
     this.pingMs,
     this.isSyncing = false,
+    this.onReconnect,
+    this.onDevicesTapped,
   });
 
   @override
@@ -75,63 +80,58 @@ class StatusDash extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            // Peer connection card
             Expanded(
               child: GlassCard(
                 accent: scheme.secondary,
-                padding: const EdgeInsets.all(15),
-                child: Row(
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
+                padding: EdgeInsets.zero,
+                child: InkWell(
+                  onTap: onDevicesTapped,
+                  onLongPress: isPeerConnected ? onReconnect : null,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(15),
+                    child: Row(
                       children: [
-                        if (isSyncing && isPeerConnected) _SyncPulse(),
-                        Icon(
-                          isPeerConnected ? Icons.wifi : Icons.wifi_off,
-                          color: isPeerConnected
-                              ? scheme.tertiary
-                              : scheme.error,
-                          size: 20,
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Icon(
+                              isPeerConnected ? Icons.devices_rounded : Icons.add_circle_outline_rounded,
+                              color: isPeerConnected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.4),
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                isPeerConnected ? (peerName ?? 'Connected') : 'Pair Device',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: scheme.onSurface,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                isPeerConnected ? (isSyncing ? 'Syncing...' : 'Idle') : 'Not linked',
+                                style: TextStyle(
+                                  color: scheme.onSurface.withValues(alpha: 0.46),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isPeerConnected
-                                ? (peerName ?? 'Connected')
-                                : 'Disconnected',
-                            style: TextStyle(
-                              color: scheme.onSurface,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (isPeerConnected && pingMs != null)
-                            Text(
-                              '${pingMs}ms',
-                              style: TextStyle(
-                                color: _getPingColor(context, pingMs!),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            )
-                          else
-                            Text(
-                              'Peer Status',
-                              style: TextStyle(
-                                color: scheme.onSurface.withValues(alpha: 0.56),
-                                fontSize: 10,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -187,13 +187,6 @@ class StatusDash extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     if (level > 50) return scheme.tertiary;
     if (level > 20) return const Color(0xFFF59E0B);
-    return scheme.error;
-  }
-
-  Color _getPingColor(BuildContext context, int ms) {
-    final scheme = Theme.of(context).colorScheme;
-    if (ms < 50) return scheme.tertiary;
-    if (ms < 150) return const Color(0xFFFACC15);
     return scheme.error;
   }
 }

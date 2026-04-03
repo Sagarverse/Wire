@@ -1,0 +1,14 @@
+- `[x]` Phase 1: Full Notification Bridge
+- `[x]` Phase 2: Bento Control Hub (Home Screen Overhaul)
+- `[x]` Phase 3: Magic File Drop
+- `[x]` Phase 4: Settings & Labs Refinement
+- `[x]` Phase 5: Remote Power Tools (Trackpad & Keyboard)
+- `[x]` Phase 6: Pro Mirroring & Continuity Camera
+- `[x]` Phase 7: Integrated Remote File System
+- `[x]` Phase 8: Desktop Browser & Audio Bridge
+- `[x]` Phase 9: Final Polish & Ecosystem Stability
+    - `[x]` Update `PairedDevice` model for battery persistence
+    - `[x]` Sync and store battery level in `AppState`
+    - `[x]` Audit UI layouts (Padding for Liquid Dock)
+    - `[x]` Add Continuity feedback (Toasts for Handoff)
+    - `[x]` Finalize walkthrough and documentation

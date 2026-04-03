@@ -1,4 +1,4 @@
-package com.example.wire
+package dev.sagarm.wire
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription

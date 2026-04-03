@@ -1,504 +1,468 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../models/transfer_item.dart';
+import '../../providers/app_state.dart';
+import '../../providers/file_transfer_provider.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/staggered_animated_item.dart';
+import '../../widgets/liquid_background.dart';
+import 'remote_file_manager_page.dart';
 
-class FilesPage extends StatefulWidget {
-  final List<TransferItem> transfers;
-  final VoidCallback onClearHistory;
-  final Function(TransferItem) onFileTap;
-  final VoidCallback onSendFile;
-  final VoidCallback onOpenDownloadsFolder;
-  final VoidCallback? onOpenRemoteFiles; // null = no peer connected
-  final Future<void> Function()? onRefresh;
-  final Function(TransferItem)? onRetryTransfer;
-  final Function(TransferItem)? onRemoveTransfer;
-
-  const FilesPage({
-    super.key,
-    required this.transfers,
-    required this.onClearHistory,
-    required this.onFileTap,
-    required this.onSendFile,
-    required this.onOpenDownloadsFolder,
-    this.onOpenRemoteFiles,
-    this.onRefresh,
-    this.onRetryTransfer,
-    this.onRemoveTransfer,
-  });
-
-  @override
-  State<FilesPage> createState() => _FilesPageState();
-}
-
-class _FilesPageState extends State<FilesPage> {
-  final Set<String> _selectedIds = {};
+class FilesPage extends StatelessWidget {
+  final EdgeInsets? padding;
+  const FilesPage({super.key, this.padding});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final activeCount = widget.transfers
-      .where((item) => item.status == 'sending' || item.status == 'receiving')
-      .length;
-    final failedCount = widget.transfers.where((item) => item.status == 'failed').length;
-    final isSelectionMode = _selectedIds.isNotEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-      child: GlassCard(
-        borderRadius: 24,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        accent: scheme.primary,
-        elevated: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  isSelectionMode
-                      ? '${_selectedIds.length} selected'
-                      : 'Shared Files',
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                if (isSelectionMode)
-                  Row(
+    return Consumer2<AppState, FileTransferProvider>(
+      builder: (context, appState, provider, _) {
+        final transfers = provider.transfers;
+        final isPeerConnected = appState.pairingService.activeDevice != null;
+
+        return LiquidBackground(
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              // ── Header ──
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: (padding ?? const EdgeInsets.symmetric(horizontal: 24, vertical: 24))
+                      .add(const EdgeInsets.only(top: 40)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      IconButton(
-                        icon: Icon(Icons.close_rounded, color: scheme.onSurface),
-                        tooltip: 'Clear selection',
-                        onPressed: () => setState(() => _selectedIds.clear()),
-                      ),
-                      if (_selectedIds.any((id) => widget.transfers
-                          .firstWhere((t) => t.id == id)
-                          .status == 'failed') &&
-                          widget.onRetryTransfer != null)
-                        IconButton(
-                          icon: Icon(Icons.refresh_rounded, color: scheme.primary),
-                          tooltip: 'Retry selected',
-                          onPressed: _retrySelected,
+                      const SizedBox(height: 50),
+                      Text(
+                        'FILE TRANSFERS',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: scheme.primary,
+                          letterSpacing: 4.0,
                         ),
-                      IconButton(
-                        icon: Icon(Icons.delete_rounded, color: scheme.error),
-                        tooltip: 'Remove selected',
-                        onPressed: _removeSelected,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Send & Receive',
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: scheme.onSurface,
+                          letterSpacing: -1.2,
+                        ),
                       ),
                     ],
-                  )
-                else
-                  Row(
+                  ),
+                ),
+              ),
+
+              // ── Quick-Action Buttons ──
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                  child: Row(
                     children: [
-                      GlassCard(
-                        accent: scheme.secondary,
-                        padding: EdgeInsets.zero,
-                        child: InkWell(
-                          onTap: widget.onOpenRemoteFiles,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
+                      // Send File
+                      Expanded(
+                        child: _ActionButton(
+                          icon: Icons.file_upload_rounded,
+                          label: 'Send File',
+                          accent: scheme.primary,
+                          enabled: isPeerConnected,
+                          onTap: () => _pickAndSendFile(context, appState),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // Browse Remote
+                      Expanded(
+                        child: _ActionButton(
+                          icon: Icons.folder_shared_rounded,
+                          label: 'Remote Files',
+                          accent: Colors.indigo,
+                          enabled: isPeerConnected,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const RemoteFileManagerPage()),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // Open Downloads
+                      Expanded(
+                        child: _ActionButton(
+                          icon: Icons.folder_open_rounded,
+                          label: 'Downloads',
+                          accent: scheme.tertiary,
+                          enabled: true,
+                          onTap: () => _openDownloadsFolder(context, appState),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── Mount / Unmount Finder Toggle (macOS only) ──
+              if (Platform.isMacOS && isPeerConnected && appState.labsMountFinderEnabled)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    child: GlassCardInteractive(
+                      onTap: () {
+                        if (appState.isUsbMounted) {
+                          appState.unmountAsUsb();
+                        } else {
+                          appState.mountAsUsb();
+                        }
+                      },
+                      accent: appState.isUsbMounted ? Colors.green : scheme.secondary,
+                      borderRadius: BorderRadius.circular(20),
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: (appState.isUsbMounted ? Colors.green : scheme.secondary)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Row(
+                            child: Icon(
+                              appState.isUsbMounted ? Icons.eject_rounded : Icons.usb_rounded,
+                              color: appState.isUsbMounted ? Colors.green : scheme.secondary,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.folder_shared_rounded,
-                                  size: 16,
-                                  color: widget.onOpenRemoteFiles != null
-                                      ? scheme.secondary
-                                      : scheme.onSurface.withValues(alpha: 0.25),
-                                ),
-                                const SizedBox(width: 6),
                                 Text(
-                                  'Remote Files',
+                                  appState.isUsbMounted ? 'Phone Mounted in Finder' : 'Mount Phone in Finder',
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  appState.isUsbMounted
+                                      ? 'Tap to safely eject'
+                                      : 'Browse phone storage like a USB drive',
                                   style: TextStyle(
-                                    color: widget.onOpenRemoteFiles != null
-                                        ? scheme.onSurface
-                                        : scheme.onSurface.withValues(alpha: 0.28),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                    color: scheme.onSurface.withValues(alpha: 0.4),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _ActionIcon(
-                        tooltip: 'Open local folder',
-                        icon: Icons.folder_open_rounded,
-                        onPressed: widget.onOpenDownloadsFolder,
-                      ),
-                      _ActionIcon(
-                        tooltip: 'Send file',
-                        icon: Icons.upload_file_rounded,
-                        onPressed: widget.onSendFile,
-                      ),
-                      if (widget.transfers.isNotEmpty)
-                        _ActionIcon(
-                          tooltip: 'Clear history',
-                          icon: Icons.delete_sweep_rounded,
-                          onPressed: widget.onClearHistory,
-                        ),
-                    ],
-                  ),
-              ],
-            ),
-            // ... rest of the children ...
-            if (!isSelectionMode)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
-                child: Row(
-                  children: [
-                    _QueueChip(
-                      icon: Icons.wifi_protected_setup_rounded,
-                      label: '$activeCount active',
-                      color: activeCount > 0 ? scheme.primary : scheme.outline,
-                    ),
-                    const SizedBox(width: 8),
-                    _QueueChip(
-                      icon: Icons.error_outline_rounded,
-                      label: '$failedCount failed',
-                      color: failedCount > 0 ? scheme.error : scheme.outline,
-                    ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: widget.onRefresh ?? () async {},
-                child: widget.transfers.isEmpty
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          SizedBox(
-                            height: 320,
-                            child: Center(
-                              child: Text(
-                                'No shared files yet',
-                                style: TextStyle(
-                                  color: scheme.onSurface.withValues(alpha: 0.5),
-                                ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: (appState.isUsbMounted ? Colors.green : scheme.secondary)
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              appState.isUsbMounted ? 'EJECT' : 'MOUNT',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: appState.isUsbMounted ? Colors.green : scheme.secondary,
+                                letterSpacing: 1,
                               ),
                             ),
                           ),
                         ],
-                      )
-                    : ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: widget.transfers.length,
-                        itemBuilder: (context, index) {
-                          final item = widget.transfers[index];
-                          final isSelected = _selectedIds.contains(item.id);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: GlassCard(
-                              accent: isSelected 
-                                  ? scheme.primary 
-                                  : _getStatusColor(item.status),
-                              padding: const EdgeInsets.all(15),
-                              child: ListTile(
-                                onTap: isSelectionMode
-                                    ? () => _toggleSelection(item.id)
-                                    : () => widget.onFileTap(item),
-                                onLongPress: () => _toggleSelection(item.id),
-                                contentPadding: EdgeInsets.zero,
-                                leading: isSelectionMode
-                                    ? Checkbox(
-                                        value: isSelected,
-                                        onChanged: (_) => _toggleSelection(item.id),
-                                      )
-                                    : Container(
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(
-                                          color: _getStatusColor(item.status).withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Icon(
-                                          _getStatusIcon(item.status),
-                                          color: _getStatusColor(item.status),
-                                        ),
-                                      ),
-                                title: Text(
-                                  item.name,
-                                  style: TextStyle(
-                                    color: scheme.onSurface,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      item.status.toUpperCase(),
-                                      style: TextStyle(
-                                        color: _getStatusColor(item.status),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    if (item.status == 'receiving' ||
-                                        item.status == 'sending') ...[
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 8),
-                                        child: LinearProgressIndicator(
-                                          value: item.progress,
-                                          backgroundColor:
-                                              scheme.onSurface.withValues(alpha: 0.12),
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                            _getStatusColor(item.status),
-                                          ),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 6),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              '${(item.progress * 100).toInt()}%',
-                                              style: TextStyle(
-                                                color: scheme.onSurface
-                                                    .withValues(alpha: 0.7),
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                            Text(
-                                              '${item.speedLabel} • ETA: ${item.etaLabel}',
-                                              style: TextStyle(
-                                                color: scheme.onSurface
-                                                    .withValues(alpha: 0.6),
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                trailing: item.status == 'complete'
-                                    ? Icon(
-                                        Icons.open_in_new_rounded,
-                                        color: scheme.onSurface.withValues(alpha: 0.52),
-                                        size: 20,
-                                      )
-                                    : _buildTransferActions(context, item),
-                              ),
-                            ),
-                          );
-                        },
                       ),
+                    ),
+                  ),
+                ),
+
+              // ── Transfer History Header ──
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 0, 28, 12),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Recent Transfers',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (transfers.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () => _confirmClearHistory(context, provider),
+                          icon: Icon(Icons.delete_sweep_rounded, size: 16, color: scheme.error.withValues(alpha: 0.7)),
+                          label: Text(
+                            'Clear',
+                            style: TextStyle(color: scheme.error.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── Transfer List ──
+              if (transfers.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 60),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.swap_vert_rounded, size: 64, color: scheme.onSurface.withValues(alpha: 0.08)),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No transfers yet',
+                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.3), fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isPeerConnected ? 'Tap "Send File" to get started' : 'Connect a device first',
+                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.2), fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final item = transfers[index];
+                        return StaggeredAnimatedItem(
+                          index: index,
+                          child: _buildTransferTile(context, item, appState, scheme),
+                        );
+                      },
+                      childCount: transfers.length,
+                    ),
+                  ),
+                ),
+              const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Pick a file and send it to the active peer ──
+  void _pickAndSendFile(BuildContext context, AppState appState) async {
+    try {
+      final result = await FilePicker.platform.pickFiles();
+      if (result == null || result.files.isEmpty) return;
+
+      final filePath = result.files.single.path;
+      if (filePath == null) return;
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sending ${result.files.single.name}...')),
+        );
+      }
+
+      await appState.pushFile(filePath);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sent ${result.files.single.name} ✓'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Send failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // ── Open the local Downloads/Wire folder ──
+  void _openDownloadsFolder(BuildContext context, AppState appState) async {
+    try {
+      if (Platform.isMacOS) {
+        final path = appState.downloadsPath ?? '${Platform.environment['HOME']}/Downloads/Wire';
+        await Process.run('open', [path]);
+      } else if (Platform.isAndroid) {
+        appState.openFileLocation('/storage/emulated/0/Download/Wire');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open folder: $e')),
+        );
+      }
+    }
+  }
+
+  // ── Confirm then clear history ──
+  void _confirmClearHistory(BuildContext context, FileTransferProvider provider) {
+    final scheme = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: scheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Clear Transfer History?'),
+        content: const Text('This only removes the log — downloaded files are not deleted.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              provider.clearHistory();
+              Navigator.pop(ctx);
+            },
+            child: Text('Clear', style: TextStyle(color: scheme.error, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransferTile(BuildContext context, TransferItem item, AppState appState, ColorScheme scheme) {
+    final isReceive = item.direction == 'receive';
+    final isComplete = item.status == 'complete';
+    final accent = isReceive ? scheme.primary : scheme.tertiary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassCardInteractive(
+        onTap: isComplete ? () => appState.openFileLocation(item.path) : null,
+        accent: accent,
+        borderRadius: BorderRadius.circular(20),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                isReceive ? Icons.file_download_rounded : Icons.file_upload_rounded,
+                color: accent,
+                size: 20,
               ),
             ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  if (!isComplete) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: item.progress,
+                        backgroundColor: accent.withValues(alpha: 0.1),
+                        color: accent,
+                        minHeight: 4,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                    isComplete
+                        ? 'Tap to open location'
+                        : '${(item.progress * 100).toInt()}% • ${_formatSize(item.total)}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: isComplete ? accent : scheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isComplete)
+              Icon(Icons.check_circle_rounded, color: Colors.green.withValues(alpha: 0.5), size: 20)
+            else
+              const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
           ],
         ),
       ),
     );
   }
 
-  void _toggleSelection(String id) {
-    setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-      } else {
-        _selectedIds.add(id);
-      }
-    });
-  }
-
-  void _retrySelected() {
-    final toRetry = widget.transfers
-        .where((t) => _selectedIds.contains(t.id) && t.status == 'failed')
-        .toList();
-    for (final item in toRetry) {
-      widget.onRetryTransfer?.call(item);
-    }
-    setState(() => _selectedIds.clear());
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Retrying ${toRetry.length} transfer(s)...')),
-    );
-  }
-
-  void _removeSelected() {
-    final toRemove = widget.transfers
-        .where((t) => _selectedIds.contains(t.id))
-        .toList();
-    final removedIds = List<String>.from(_selectedIds);
-    
-    for (final item in toRemove) {
-      widget.onRemoveTransfer?.call(item);
-    }
-    setState(() => _selectedIds.clear());
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Removed ${toRemove.length} transfer(s)'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () {
-            for (final id in removedIds) {
-              final item = toRemove.firstWhere((t) => t.id == id);
-              widget.transfers.add(item);
-            }
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Undo successful')),
-            );
-          },
-        ),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
-
-  IconData _getStatusIcon(String status) {
-    switch (status) {
-      case 'complete':
-        return Icons.insert_drive_file;
-      case 'receiving':
-        return Icons.download_for_offline;
-      case 'sending':
-        return Icons.upload_file;
-      case 'failed':
-        return Icons.error_outline;
-      default:
-        return Icons.help_outline;
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'complete':
-        return Colors.greenAccent;
-      case 'receiving':
-        return Colors.blueAccent;
-      case 'sending':
-        return Colors.orangeAccent;
-      case 'failed':
-        return Colors.redAccent;
-      default:
-        return Colors.white54;
-    }
-  }
-
-  Widget? _buildTransferActions(BuildContext context, TransferItem item) {
-    final scheme = Theme.of(context).colorScheme;
-
-    if (item.status == 'failed' && widget.onRetryTransfer != null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Retry',
-            onPressed: () => widget.onRetryTransfer!(item),
-            icon: Icon(Icons.restart_alt_rounded, color: scheme.primary, size: 20),
-          ),
-          if (widget.onRemoveTransfer != null)
-            IconButton(
-              tooltip: 'Remove',
-              onPressed: () => widget.onRemoveTransfer!(item),
-              icon: Icon(
-                Icons.close_rounded,
-                color: scheme.onSurface.withValues(alpha: 0.6),
-                size: 20,
-              ),
-            ),
-        ],
-      );
-    }
-
-    if ((item.status == 'sending' || item.status == 'receiving') && widget.onRemoveTransfer != null) {
-      return IconButton(
-        tooltip: 'Remove from queue',
-        onPressed: () => widget.onRemoveTransfer!(item),
-        icon: Icon(
-          Icons.cancel_outlined,
-          color: scheme.onSurface.withValues(alpha: 0.6),
-          size: 20,
-        ),
-      );
-    }
-
-    return null;
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }
 
-class _QueueChip extends StatelessWidget {
+// ── Reusable Action Button widget ──
+class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color color;
+  final Color accent;
+  final bool enabled;
+  final VoidCallback onTap;
 
-  const _QueueChip({
+  const _ActionButton({
     required this.icon,
     required this.label,
-    required this.color,
+    required this.accent,
+    required this.enabled,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.24)),
-      ),
-      child: Row(
+    final scheme = Theme.of(context).colorScheme;
+    return GlassCardInteractive(
+      onTap: enabled ? onTap : null,
+      accent: enabled ? accent : null,
+      borderRadius: BorderRadius.circular(20),
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: (enabled ? accent : scheme.onSurface).withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: enabled ? accent : scheme.onSurface.withValues(alpha: 0.3), size: 22),
+          ),
+          const SizedBox(height: 8),
           Text(
             label,
             style: TextStyle(
-              color: color,
+              fontWeight: FontWeight.w800,
               fontSize: 11,
-              fontWeight: FontWeight.w700,
+              color: enabled ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.3),
             ),
+            textAlign: TextAlign.center,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ActionIcon extends StatelessWidget {
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  const _ActionIcon({
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Tooltip(
-      message: tooltip,
-      child: Container(
-        margin: const EdgeInsets.only(left: 2),
-        decoration: BoxDecoration(
-          color: scheme.onSurface.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: scheme.onSurface.withValues(alpha: 0.12)),
-        ),
-        child: IconButton(
-          icon: Icon(icon, color: scheme.onSurface.withValues(alpha: 0.75)),
-          onPressed: onPressed,
-        ),
       ),
     );
   }

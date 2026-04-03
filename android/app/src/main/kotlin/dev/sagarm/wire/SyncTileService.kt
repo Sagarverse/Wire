@@ -1,4 +1,4 @@
-package com.example.wire
+package dev.sagarm.wire
 
 import android.content.Intent
 import android.service.quicksettings.TileService

@@ -1,4 +1,4 @@
-package com.example.wire
+package dev.sagarm.wire
 
 import android.content.BroadcastReceiver
 import android.content.Context
