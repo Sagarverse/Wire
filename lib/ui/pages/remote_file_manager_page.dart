@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
+import '../../providers/app_state.dart';
 import '../../providers/remote_file_provider.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/file_action_sheet.dart';
@@ -56,21 +57,48 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    
+
     return Consumer<RemoteFileProvider>(
       builder: (context, provider, _) {
         final canGoUp = provider.canGoBack;
-        
+
         return DropTarget(
           onDragEntered: (_) => setState(() => _dragActive = true),
           onDragExited: (_) => setState(() => _dragActive = false),
-          onDragDone: (details) {
+          onDragDone: (details) async {
             setState(() => _dragActive = false);
-            // In a real app, we'd trigger an upload here.
-            // For now, we just show a hint.
+            if (details.files.isEmpty) return;
+            final appState = context.read<AppState>();
+            if (appState.pairingService.activeDevice == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('No device connected')),
+              );
+              return;
+            }
+            final file = details.files.first;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Upload started...')),
+              SnackBar(content: Text('Sending ${file.name}...')),
             );
+            try {
+              await appState.pushFile(file.path);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sent ${file.name} ✓'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Send failed: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
           },
           child: Stack(
             children: [
@@ -84,7 +112,7 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
                     icon: const Icon(Icons.arrow_back_rounded),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  title: _isSearching 
+                  title: _isSearching
                     ? TextField(
                         controller: _searchController,
                         autofocus: true,
@@ -119,12 +147,16 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
                 body: LiquidBackground(
                   child: Column(
                     children: [
-                      if (provider.currentPath != null) 
+                      if (provider.currentPath != null)
                         _buildBreadcrumb(scheme, canGoUp, provider),
-                      
+
                       Expanded(
                         child: provider.isLoading && provider.entries.isEmpty
-                            ? const Center(child: CircularProgressIndicator())
+                            ? ListView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                itemCount: 8,
+                                itemBuilder: (_, i) => _SkeletonTile(index: i),
+                              )
                             : provider.error != null
                             ? _buildErrorState(scheme, provider)
                             : provider.entries.isEmpty
@@ -153,7 +185,7 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
 
   Widget _buildBreadcrumb(ColorScheme scheme, bool canGoUp, RemoteFileProvider provider) {
     final parts = (provider.currentPath ?? '').split('/').where((s) => s.isNotEmpty).toList();
-    
+
     return Container(
       height: 48,
       margin: const EdgeInsets.only(bottom: 8),
@@ -161,12 +193,12 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: parts.length + 1,
-        separatorBuilder: (_, __) => Icon(Icons.chevron_right_rounded, size: 16, color: scheme.onSurface.withValues(alpha: 0.2)),
+        separatorBuilder: (context, index) => Icon(Icons.chevron_right_rounded, size: 16, color: scheme.onSurface.withValues(alpha: 0.2)),
         itemBuilder: (context, index) {
           final isRoot = index == 0;
           final label = isRoot ? 'Phone' : parts[index - 1];
           final isLast = index == parts.length;
-          
+
           return Center(
             child: InkWell(
               onTap: isLast ? null : () {
@@ -354,5 +386,102 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+}
+
+class _SkeletonTile extends StatefulWidget {
+  final int index;
+  const _SkeletonTile({required this.index});
+
+  @override
+  State<_SkeletonTile> createState() => _SkeletonTileState();
+}
+
+class _SkeletonTileState extends State<_SkeletonTile>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _shimmer = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+    // Stagger start
+    Future.delayed(Duration(milliseconds: widget.index * 80), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _shimmer,
+      builder: (context, child) {
+        final alpha = _shimmer.value;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: scheme.onSurface.withValues(alpha: alpha * 0.07),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: scheme.onSurface.withValues(alpha: alpha * 0.04),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: scheme.onSurface.withValues(alpha: alpha * 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 12,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: scheme.onSurface.withValues(alpha: alpha * 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 10,
+                        width: 80,
+                        decoration: BoxDecoration(
+                          color: scheme.onSurface.withValues(alpha: alpha * 0.07),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }

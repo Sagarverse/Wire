@@ -236,35 +236,12 @@ class AppDelegate: FlutterAppDelegate {
   #if canImport(ScreenCaptureKit)
   @available(macOS 12.3, *)
   private func startAudioCapture(result: @escaping FlutterResult) {
-      SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { [weak self] (content: SCShareableContent?, error: Error?) in
-          guard let self = self, let content = content, error == nil else {
-              result(FlutterError(code: "SCK_ERROR", message: "Failed to get content", details: nil))
-              return
-          }
-          let filter = SCContentFilter(display: content.displays[0], excludingWindows: [])
-          let config = SCStreamConfiguration()
-          config.capturesAudio = true
-          // config.excludesCurrentProcessAudio = false // Requires macOS 14.0+
-          self.audioState.stream = SCStream(filter: filter, configuration: config, delegate: nil)
-          do {
-              try (self.audioState.stream as? SCStream)?.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global())
-              (self.audioState.stream as? SCStream)?.startCapture { error in
-                  if let error = error {
-                      result(FlutterError(code: "SCK_START_FAILED", message: error.localizedDescription, details: nil))
-                  } else { result(true) }
-              }
-          } catch {
-              result(FlutterError(code: "SCK_INIT_FAILED", message: error.localizedDescription, details: nil))
-          }
-      }
+      result(FlutterError(code: "SCK_NOT_IMPLEMENTED", message: "Audio capture temporarily disabled for stability", details: nil))
   }
 
   @available(macOS 12.3, *)
   private func stopAudioCapture(result: @escaping FlutterResult) {
-      (audioState.stream as? SCStream)?.stopCapture { _ in
-          self.audioState.stream = nil
-          result(true)
-      }
+      result(true)
   }
   #else
   private func startAudioCapture(result: @escaping FlutterResult) {

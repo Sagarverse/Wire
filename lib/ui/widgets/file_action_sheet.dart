@@ -44,13 +44,14 @@ class FileActionSheet extends StatelessWidget {
                   color: scheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: isImage 
+                child: isImage
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: Image.network(
                         provider.getThumbnailUrl(entry),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(Icons.image_rounded, color: scheme.primary),
+                        errorBuilder: (context, error, stackTrace) =>
+                            Icon(Icons.image_rounded, color: scheme.primary),
                       ),
                     )
                   : Icon(Icons.insert_drive_file_rounded, color: scheme.primary, size: 28),
@@ -80,7 +81,7 @@ class FileActionSheet extends StatelessWidget {
           _buildActionItem(
             context,
             icon: Icons.download_rounded,
-            label: 'Download to Mac',
+            label: 'Download to Device',
             color: scheme.primary,
             onTap: () {
               provider.downloadFile(entry);
@@ -102,24 +103,7 @@ class FileActionSheet extends StatelessWidget {
               }
             },
           ),
-          _buildActionItem(
-            context,
-            icon: Icons.share_rounded,
-            label: 'Share Link',
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          const Divider(height: 32),
-          _buildActionItem(
-            context,
-            icon: Icons.delete_outline_rounded,
-            label: 'Delete from Phone',
-            color: scheme.error,
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
+
         ],
       ),
     );

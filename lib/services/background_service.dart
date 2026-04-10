@@ -8,10 +8,17 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse notificationResponse) {
+  final service = FlutterBackgroundService();
+  service.invoke('action', {'id': notificationResponse.actionId});
+}
+
+@pragma('vm:entry-point')
 class BackgroundService {
   static const notificationChannelId = 'my_foreground';
   static const notificationId = 888;
-  
+
   // These keys are stored to share state between main app and background isolate
   static const String keyPeerHost = 'last_peer_host';
   static const String keySyncPaused = 'sync_paused';
@@ -29,7 +36,7 @@ class BackgroundService {
 
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
@@ -47,7 +54,7 @@ class BackgroundService {
       ),
       iosConfiguration: IosConfiguration(),
     );
-    
+
     debugPrint('Background service configured');
   }
 
@@ -66,14 +73,48 @@ class BackgroundService {
 
   @pragma('vm:entry-point')
   static void onStart(ServiceInstance service) async {
-    DartPluginRegistrant.ensureInitialized();
+    try {
+      DartPluginRegistrant.ensureInitialized();
+    } catch (_) {
+      // Some plugins (e.g. flutter_background_service_android) cannot be
+      // initialised inside the background isolate — silently skip them.
+    }
 
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    await flutterLocalNotificationsPlugin.initialize(
+      const InitializationSettings(android: AndroidInitializationSettings('ic_bg_service_small')),
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
+
+    void updateNotification(String content) {
+      if (service is AndroidServiceInstance) {
+         flutterLocalNotificationsPlugin.show(
+           notificationId,
+           'Wire Sync',
+           content,
+           const NotificationDetails(
+             android: AndroidNotificationDetails(
+               notificationChannelId,
+               'Wire Sync status',
+               icon: 'ic_bg_service_small',
+               ongoing: true,
+               actions: [
+                 AndroidNotificationAction('sync_clipboard', 'Sync Clipboard', showsUserInterface: true),
+                 AndroidNotificationAction('ring_device', 'Ring Device', showsUserInterface: true),
+               ]
+             ),
+           ),
+         );
+      }
+    }
     
+    // Set initial notification with actions
+    updateNotification('Sync service active');
+
     // Background Isolate Specific Services
     final platform = const MethodChannel('wire/platform');
     final wsService = _BackgroundWsService();
-    
+
     service.on('reconnect').listen((event) {
        final host = event?['host']?.toString();
        if (host != null) wsService.connect(host);
@@ -81,6 +122,22 @@ class BackgroundService {
 
     service.on('stopService').listen((event) {
       service.stopSelf();
+    });
+
+    service.on('action').listen((event) async {
+       final id = event?['id']?.toString();
+       if (id == 'sync_clipboard') {
+          try {
+            final text = await platform.invokeMethod<String>('getClipboardText');
+            if (text != null && text.isNotEmpty) {
+               wsService.send({'type': 'clipboard', 'text': text});
+               updateNotification('Force synced clipboard');
+            }
+          } catch (_) {}
+       } else if (id == 'ring_device') {
+          wsService.send({'type': 'find_phone'});
+          updateNotification('Ringing remote device...');
+       }
     });
 
     // Initial connection attempt from storage
@@ -91,9 +148,9 @@ class BackgroundService {
     // PERSISTENT CLIPBOARD MONITORING
     // On Android, we can poll the clipboard in background within this isolate.
     // Note: Since Android 10+, clipboard access is only for foreground apps.
-    // However, if we're a foreground service, we might still have access or 
+    // However, if we're a foreground service, we might still have access or
     // work around it via Accessibility Services (which we already have for mouse input).
-    
+
     Timer.periodic(const Duration(seconds: 2), (timer) async {
       if (service is AndroidServiceInstance) {
         if (await service.isForegroundService()) {
@@ -127,23 +184,9 @@ class BackgroundService {
           if (text != null) {
              await platform.invokeMethod('setClipboardText', {'text': text});
              await prefs.setString('bg_last_text', text);
-             
+
              // Update notification
-             if (service is AndroidServiceInstance) {
-                flutterLocalNotificationsPlugin.show(
-                  notificationId,
-                  'Wire Sync',
-                  'Synced: ${text.length > 20 ? '${text.substring(0, 17)}...' : text}',
-                  const NotificationDetails(
-                    android: AndroidNotificationDetails(
-                      notificationChannelId,
-                      'Wire Sync status',
-                      icon: 'ic_bg_service_small',
-                      ongoing: true,
-                    ),
-                  ),
-                );
-             }
+             updateNotification('Synced: ${text.length > 20 ? '${text.substring(0, 17)}...' : text}');
           }
        }
     };

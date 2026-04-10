@@ -28,10 +28,27 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get messages => _incoming.stream;
   Stream<ConnectionStatus> get status => _statusController.stream;
 
-  bool get isClientConnected => _clientSocket?.readyState == WebSocket.open;
-  bool get hasServerClients => _serverClients.isNotEmpty;
+  bool get isClientConnected => _clientSocket != null && _clientSocket!.readyState == WebSocket.open;
+  bool get hasServerClients => _serverClients.any((s) => s.readyState == WebSocket.open);
   String? get lastClientAddress => _lastClientAddress;
   int get actualPort => _actualPort ?? port;
+
+  ConnectionStatus _calculateCurrentStatus() {
+    if (isClientConnected || hasServerClients) {
+      return ConnectionStatus.connected;
+    }
+    if (_clientSocket != null && _clientSocket!.readyState == WebSocket.connecting) {
+      return ConnectionStatus.connecting;
+    }
+    if (_lastError != null) {
+      return ConnectionStatus.error;
+    }
+    return ConnectionStatus.disconnected;
+  }
+
+  void _emitStatus() {
+    _statusController.add(_calculateCurrentStatus());
+  }
 
   Future<void> startServer() async {
     if (_server != null) {
@@ -51,34 +68,39 @@ class WebSocketService {
       );
     }
     _actualPort = _server!.port;
+    _emitStatus();
     _ensureHeartbeatTimer();
+    
     _server!.listen((request) async {
       if (WebSocketTransformer.isUpgradeRequest(request)) {
         _lastClientAddress = request.connectionInfo?.remoteAddress.address;
-        final socket = await WebSocketTransformer.upgrade(request);
-        _serverClients.add(socket);
-        _serverLastSeen[socket] = DateTime.now();
-        _statusController.add(ConnectionStatus.connected);
-        _ensureHeartbeatTimer();
-        socket.listen(
-          (data) => _handleIncoming(data, socket: socket),
-          onDone: () {
-            _serverClients.remove(socket);
-            _serverLastSeen.remove(socket);
-            if (_serverClients.isEmpty && _clientSocket == null) {
-              _statusController.add(ConnectionStatus.disconnected);
-            }
-            _ensureHeartbeatTimer();
-          },
-          onError: (_) {
-            _serverClients.remove(socket);
-            _serverLastSeen.remove(socket);
-            if (_serverClients.isEmpty && _clientSocket == null) {
-              _statusController.add(ConnectionStatus.disconnected);
-            }
-            _ensureHeartbeatTimer();
-          },
-        );
+        try {
+          final socket = await WebSocketTransformer.upgrade(request);
+          _serverClients.add(socket);
+          _serverLastSeen[socket] = DateTime.now();
+          _emitStatus();
+          _ensureHeartbeatTimer();
+          
+          socket.listen(
+            (data) => _handleIncoming(data, socket: socket),
+            onDone: () {
+              _serverClients.remove(socket);
+              _serverLastSeen.remove(socket);
+              _emitStatus();
+              _ensureHeartbeatTimer();
+            },
+            onError: (e) {
+              _lastError = e.toString();
+              _serverClients.remove(socket);
+              _serverLastSeen.remove(socket);
+              _emitStatus();
+              _ensureHeartbeatTimer();
+            },
+          );
+        } catch (e) {
+          _lastError = e.toString();
+          _emitStatus();
+        }
       } else {
         request.response.statusCode = HttpStatus.notFound;
         await request.response.close();
@@ -91,7 +113,7 @@ class WebSocketService {
     final targetPort = portOverride ?? port;
     final uri = Uri.parse('ws://$host:$targetPort');
     _lastError = null;
-    _statusController.add(ConnectionStatus.connecting);
+    _emitStatus();
     
     try {
       await _clientSocket?.close();
@@ -103,7 +125,7 @@ class WebSocketService {
       ).timeout(const Duration(seconds: 5));
       
       _clientLastSeen = DateTime.now();
-      _statusController.add(ConnectionStatus.connected);
+      _emitStatus();
       _ensureHeartbeatTimer();
       
       _clientSocket?.listen(
@@ -111,16 +133,14 @@ class WebSocketService {
         onDone: () {
           _clientSocket = null;
           _clientLastSeen = null;
-          if (_serverClients.isEmpty) {
-            _statusController.add(ConnectionStatus.disconnected);
-          }
+          _emitStatus();
           _ensureHeartbeatTimer();
         },
         onError: (e) {
           _lastError = e.toString();
           _clientSocket = null;
           _clientLastSeen = null;
-          _statusController.add(ConnectionStatus.error);
+          _emitStatus();
           _ensureHeartbeatTimer();
         },
       );
@@ -128,7 +148,7 @@ class WebSocketService {
       _lastError = e.toString();
       _clientSocket = null;
       _clientLastSeen = null;
-      _statusController.add(ConnectionStatus.error);
+      _emitStatus();
       _ensureHeartbeatTimer();
       rethrow;
     }
@@ -257,7 +277,7 @@ class WebSocketService {
         _clientSocket?.add(jsonEncode({'type': 'ping'}));
       } catch (_) {}
       if (_clientLastSeen != null &&
-          now.difference(_clientLastSeen!).inSeconds > 90) {
+          now.difference(_clientLastSeen!).inSeconds > 15) {
         try {
           _clientSocket?.close();
         } catch (_) {}
@@ -279,7 +299,7 @@ class WebSocketService {
         continue;
       }
       final last = _serverLastSeen[client];
-      if (last != null && now.difference(last).inSeconds > 90) {
+      if (last != null && now.difference(last).inSeconds > 15) {
         staleClients.add(client);
       }
     }

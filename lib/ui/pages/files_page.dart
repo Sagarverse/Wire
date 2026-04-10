@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -30,29 +31,35 @@ class FilesPage extends StatelessWidget {
               // ── Header ──
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: (padding ?? const EdgeInsets.symmetric(horizontal: 24, vertical: 24))
-                      .add(const EdgeInsets.only(top: 40)),
+                  padding:
+                      (padding ??
+                              const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 24,
+                              ))
+                          .add(const EdgeInsets.only(top: 40)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 50),
-                      Text(
-                        'FILE TRANSFERS',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: scheme.primary,
-                          letterSpacing: 4.0,
+                        Text(
+                          'FILE TRANSFERS',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: scheme.onSurface.withValues(alpha: 0.5),
+                            letterSpacing: 4.0,
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 8),
                       Text(
                         'Send & Receive',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: scheme.onSurface,
-                          letterSpacing: -1.2,
-                        ),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: scheme.onSurface,
+                              letterSpacing: -1.2,
+                            ),
                       ),
                     ],
                   ),
@@ -70,7 +77,7 @@ class FilesPage extends StatelessWidget {
                         child: _ActionButton(
                           icon: Icons.file_upload_rounded,
                           label: 'Send File',
-                          accent: scheme.primary,
+                          accent: scheme.onSurface,
                           enabled: isPeerConnected,
                           onTap: () => _pickAndSendFile(context, appState),
                         ),
@@ -82,10 +89,12 @@ class FilesPage extends StatelessWidget {
                         child: _ActionButton(
                           icon: Icons.folder_shared_rounded,
                           label: 'Remote Files',
-                          accent: Colors.indigo,
+                          accent: scheme.onSurface,
                           enabled: isPeerConnected,
                           onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const RemoteFileManagerPage()),
+                            MaterialPageRoute(
+                              builder: (_) => const RemoteFileManagerPage(),
+                            ),
                           ),
                         ),
                       ),
@@ -96,7 +105,7 @@ class FilesPage extends StatelessWidget {
                         child: _ActionButton(
                           icon: Icons.folder_open_rounded,
                           label: 'Downloads',
-                          accent: scheme.tertiary,
+                          accent: scheme.onSurface,
                           enabled: true,
                           onTap: () => _openDownloadsFolder(context, appState),
                         ),
@@ -107,7 +116,9 @@ class FilesPage extends StatelessWidget {
               ),
 
               // ── Mount / Unmount Finder Toggle (macOS only) ──
-              if (Platform.isMacOS && isPeerConnected && appState.labsMountFinderEnabled)
+              if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS &&
+                  isPeerConnected &&
+                  appState.labsMountFinderEnabled)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -119,7 +130,9 @@ class FilesPage extends StatelessWidget {
                           appState.mountAsUsb();
                         }
                       },
-                      accent: appState.isUsbMounted ? Colors.green : scheme.secondary,
+                      accent: appState.isUsbMounted
+                          ? scheme.onSurface
+                          : scheme.onSurface.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                       padding: const EdgeInsets.all(16),
                       child: Row(
@@ -127,13 +140,20 @@ class FilesPage extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: (appState.isUsbMounted ? Colors.green : scheme.secondary)
-                                  .withValues(alpha: 0.12),
+                              color:
+                                  (appState.isUsbMounted
+                                          ? Colors.green
+                                          : scheme.secondary)
+                                      .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Icon(
-                              appState.isUsbMounted ? Icons.eject_rounded : Icons.usb_rounded,
-                              color: appState.isUsbMounted ? Colors.green : scheme.secondary,
+                              appState.isUsbMounted
+                                  ? Icons.eject_rounded
+                                  : Icons.usb_rounded,
+                              color: appState.isUsbMounted
+                                  ? scheme.onSurface
+                                  : scheme.onSurface.withValues(alpha: 0.6),
                               size: 22,
                             ),
                           ),
@@ -143,8 +163,13 @@ class FilesPage extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  appState.isUsbMounted ? 'Phone Mounted in Finder' : 'Mount Phone in Finder',
-                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                  appState.isUsbMounted
+                                      ? 'Phone Mounted in Finder'
+                                      : 'Mount Phone in Finder',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
@@ -153,17 +178,25 @@ class FilesPage extends StatelessWidget {
                                       : 'Browse phone storage like a USB drive',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: scheme.onSurface.withValues(alpha: 0.4),
+                                    color: scheme.onSurface.withValues(
+                                      alpha: 0.4,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
-                              color: (appState.isUsbMounted ? Colors.green : scheme.secondary)
-                                  .withValues(alpha: 0.1),
+                              color:
+                                  (appState.isUsbMounted
+                                          ? Colors.green
+                                          : scheme.secondary)
+                                      .withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
@@ -171,7 +204,9 @@ class FilesPage extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w900,
-                                color: appState.isUsbMounted ? Colors.green : scheme.secondary,
+                                color: appState.isUsbMounted
+                                    ? Colors.green
+                                    : scheme.secondary,
                                 letterSpacing: 1,
                               ),
                             ),
@@ -199,11 +234,20 @@ class FilesPage extends StatelessWidget {
                       const Spacer(),
                       if (transfers.isNotEmpty)
                         TextButton.icon(
-                          onPressed: () => _confirmClearHistory(context, provider),
-                          icon: Icon(Icons.delete_sweep_rounded, size: 16, color: scheme.error.withValues(alpha: 0.7)),
+                          onPressed: () =>
+                              _confirmClearHistory(context, provider),
+                          icon: Icon(
+                            Icons.delete_sweep_rounded,
+                            size: 16,
+                            color: scheme.error.withValues(alpha: 0.7),
+                          ),
                           label: Text(
                             'Clear',
-                            style: TextStyle(color: scheme.error.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: scheme.error.withValues(alpha: 0.7),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                     ],
@@ -220,16 +264,28 @@ class FilesPage extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.swap_vert_rounded, size: 64, color: scheme.onSurface.withValues(alpha: 0.08)),
+                          Icon(
+                            Icons.swap_vert_rounded,
+                            size: 64,
+                            color: scheme.onSurface.withValues(alpha: 0.08),
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             'No transfers yet',
-                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.3), fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                              color: scheme.onSurface.withValues(alpha: 0.3),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            isPeerConnected ? 'Tap "Send File" to get started' : 'Connect a device first',
-                            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.2), fontSize: 12),
+                            isPeerConnected
+                                ? 'Tap "Send File" to get started'
+                                : 'Connect a device first',
+                            style: TextStyle(
+                              color: scheme.onSurface.withValues(alpha: 0.2),
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -240,16 +296,18 @@ class FilesPage extends StatelessWidget {
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final item = transfers[index];
-                        return StaggeredAnimatedItem(
-                          index: index,
-                          child: _buildTransferTile(context, item, appState, scheme),
-                        );
-                      },
-                      childCount: transfers.length,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final item = transfers[index];
+                      return StaggeredAnimatedItem(
+                        index: index,
+                        child: _buildTransferTile(
+                          context,
+                          item,
+                          appState,
+                          scheme,
+                        ),
+                      );
+                    }, childCount: transfers.length),
                   ),
                 ),
               const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
@@ -288,7 +346,10 @@ class FilesPage extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Send failed: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Send failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -297,23 +358,28 @@ class FilesPage extends StatelessWidget {
   // ── Open the local Downloads/Wire folder ──
   void _openDownloadsFolder(BuildContext context, AppState appState) async {
     try {
-      if (Platform.isMacOS) {
-        final path = appState.downloadsPath ?? '${Platform.environment['HOME']}/Downloads/Wire';
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+        final path =
+            appState.downloadsPath ??
+            '${Platform.environment['HOME']}/Downloads/Wire';
         await Process.run('open', [path]);
-      } else if (Platform.isAndroid) {
+      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         appState.openFileLocation('/storage/emulated/0/Download/Wire');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open folder: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not open folder: $e')));
       }
     }
   }
 
   // ── Confirm then clear history ──
-  void _confirmClearHistory(BuildContext context, FileTransferProvider provider) {
+  void _confirmClearHistory(
+    BuildContext context,
+    FileTransferProvider provider,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     showDialog(
       context: context,
@@ -321,22 +387,38 @@ class FilesPage extends StatelessWidget {
         backgroundColor: scheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Clear Transfer History?'),
-        content: const Text('This only removes the log — downloaded files are not deleted.'),
+        content: const Text(
+          'This only removes the log — downloaded files are not deleted.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () {
               provider.clearHistory();
               Navigator.pop(ctx);
             },
-            child: Text('Clear', style: TextStyle(color: scheme.error, fontWeight: FontWeight.bold)),
+            child: Text(
+              'Clear',
+              style: TextStyle(
+                color: scheme.error,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTransferTile(BuildContext context, TransferItem item, AppState appState, ColorScheme scheme) {
+  Widget _buildTransferTile(
+    BuildContext context,
+    TransferItem item,
+    AppState appState,
+    ColorScheme scheme,
+  ) {
     final isReceive = item.direction == 'receive';
     final isComplete = item.status == 'complete';
     final accent = isReceive ? scheme.primary : scheme.tertiary;
@@ -357,7 +439,9 @@ class FilesPage extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(
-                isReceive ? Icons.file_download_rounded : Icons.file_upload_rounded,
+                isReceive
+                    ? Icons.file_download_rounded
+                    : Icons.file_upload_rounded,
                 color: accent,
                 size: 20,
               ),
@@ -369,7 +453,10 @@ class FilesPage extends StatelessWidget {
                 children: [
                   Text(
                     item.name,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -393,16 +480,26 @@ class FilesPage extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: isComplete ? accent : scheme.onSurface.withValues(alpha: 0.4),
+                      color: isComplete
+                          ? accent
+                          : scheme.onSurface.withValues(alpha: 0.4),
                     ),
                   ),
                 ],
               ),
             ),
             if (isComplete)
-              Icon(Icons.check_circle_rounded, color: Colors.green.withValues(alpha: 0.5), size: 20)
+              Icon(
+                Icons.check_circle_rounded,
+                color: Colors.green.withValues(alpha: 0.5),
+                size: 20,
+              )
             else
-              const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
           ],
         ),
       ),
@@ -447,10 +544,16 @@ class _ActionButton extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: (enabled ? accent : scheme.onSurface).withValues(alpha: 0.12),
+              color: (enabled ? accent : scheme.onSurface).withValues(
+                alpha: 0.12,
+              ),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: enabled ? accent : scheme.onSurface.withValues(alpha: 0.3), size: 22),
+            child: Icon(
+              icon,
+              color: enabled ? accent : scheme.onSurface.withValues(alpha: 0.3),
+              size: 22,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -458,7 +561,9 @@ class _ActionButton extends StatelessWidget {
             style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 11,
-              color: enabled ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.3),
+              color: enabled
+                  ? scheme.onSurface
+                  : scheme.onSurface.withValues(alpha: 0.3),
             ),
             textAlign: TextAlign.center,
           ),

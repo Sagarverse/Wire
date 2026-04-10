@@ -2,18 +2,35 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/transfer_item.dart';
 import '../services/file_transfer_service.dart';
+import '../services/history_service.dart';
 
 class FileTransferProvider extends ChangeNotifier {
   final FileTransferService _fileTransferService;
+  final HistoryService _historyService;
   final List<TransferItem> _transfers = [];
   StreamSubscription? _progressSub;
   StreamSubscription? _completeSub;
 
-  FileTransferProvider({required FileTransferService fileTransferService})
-      : _fileTransferService = fileTransferService {
+  FileTransferProvider({
+    required FileTransferService fileTransferService,
+    required HistoryService historyService,
+  }) : _fileTransferService = fileTransferService,
+       _historyService = historyService {
     // Note: Server is already started by AppState.init() — no need to call startServer() here
     _progressSub = _fileTransferService.receiveProgress.listen(_handleReceiveProgress);
     _completeSub = _fileTransferService.receiveComplete.listen(_handleReceiveComplete);
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      await _historyService.init();
+      final history = await _historyService.getTransferHistory();
+      if (history.isNotEmpty) {
+        _transfers.addAll(history);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   List<TransferItem> get transfers => List.unmodifiable(_transfers);

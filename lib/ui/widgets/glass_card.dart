@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class GlassCard extends StatelessWidget {
   final Widget child;
@@ -15,8 +16,8 @@ class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
     required this.child,
-    this.blur = 15.0,
-    this.opacity = 0.08,
+    this.blur = 12.0,
+    this.opacity = 0.06,
     this.borderRadius,
     this.border,
     this.padding,
@@ -37,13 +38,13 @@ class GlassCard extends StatelessWidget {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: color ?? (isDark 
-              ? Colors.white.withValues(alpha: opacity) 
-              : Colors.black.withValues(alpha: opacity * 0.5)),
+            color: color ?? (isDark
+              ? (accent != null ? accent!.withValues(alpha: 0.1) : Colors.white.withValues(alpha: opacity))
+              : Colors.white.withValues(alpha: opacity * 1.5)),
             borderRadius: borderRadius ?? BorderRadius.circular(24),
             border: border ?? Border.all(
-              color: (accent ?? (isDark ? Colors.white : Colors.black)).withValues(alpha: accent != null ? 0.2 : 0.1),
-              width: accent != null ? 1.5 : 1.2,
+              color: (accent ?? (isDark ? Colors.white : Colors.black)).withValues(alpha: isDark ? 0.15 : 0.08),
+              width: 1.0,
             ),
             boxShadow: [
               if (accent != null)
@@ -65,6 +66,7 @@ class GlassCard extends StatelessWidget {
 class GlassCardInteractive extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final double blur;
   final double opacity;
   final BorderRadius? borderRadius;
@@ -75,8 +77,9 @@ class GlassCardInteractive extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
-    this.blur = 15.0,
-    this.opacity = 0.08,
+    this.onLongPress,
+    this.blur = 12.0,
+    this.opacity = 0.06,
     this.borderRadius,
     this.padding,
     this.accent,
@@ -93,24 +96,44 @@ class _GlassCardInteractiveState extends State<GlassCardInteractive> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: widget.onTap != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
         onTapDown: (_) => setState(() => _isPressed = true),
         onTapUp: (_) => setState(() => _isPressed = false),
         onTapCancel: () => setState(() => _isPressed = false),
-        onTap: widget.onTap,
+        onTap: widget.onTap != null
+            ? () {
+                HapticFeedback.lightImpact();
+                widget.onTap!();
+              }
+            : null,
+        onLongPress: widget.onLongPress != null
+            ? () {
+                HapticFeedback.mediumImpact();
+                widget.onLongPress!();
+              }
+            : null,
         child: AnimatedScale(
-          scale: _isPressed ? 0.98 : (_isHovered ? 1.02 : 1.0),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          child: GlassCard(
-            blur: widget.blur,
-            opacity: _isHovered ? widget.opacity * 1.5 : widget.opacity,
-            borderRadius: widget.borderRadius,
-            padding: widget.padding,
-            accent: widget.accent,
-            child: widget.child,
+          scale: _isPressed ? 0.97 : (_isHovered ? 1.015 : 1.0),
+          duration: _isPressed
+              ? const Duration(milliseconds: 80)
+              : const Duration(milliseconds: 280),
+          curve: _isPressed ? Curves.easeIn : Curves.easeOutBack,
+          child: AnimatedOpacity(
+            opacity: widget.onTap == null ? 0.52 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            child: GlassCard(
+              blur: widget.blur,
+              opacity: _isHovered ? widget.opacity * 1.5 : widget.opacity,
+              borderRadius: widget.borderRadius,
+              padding: widget.padding,
+              accent: widget.accent,
+              child: widget.child,
+            ),
           ),
         ),
       ),

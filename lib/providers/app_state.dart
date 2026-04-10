@@ -9,13 +9,31 @@ import '../services/pairing_service.dart';
 import '../services/app_identity.dart';
 import '../services/websocket_service.dart';
 import '../services/file_transfer_service.dart';
-import '../services/screen_mirror_service.dart';
+
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/notification_sync_service.dart';
+import 'package:path/path.dart' as p;
 import '../services/notifications_service.dart';
+import '../services/webrtc_p2p_service.dart';
 import '../controllers/clipboard_controller.dart' show ClipboardController;
+
+class ReceivedFile {
+  final String name;
+  final String path;
+  final int size;
+  final DateTime timestamp;
+
+  ReceivedFile({
+    required this.name,
+    required this.path,
+    required this.size,
+    required this.timestamp,
+  });
+}
+
+enum ConnectionMode { local, p2p }
 
 class AppState extends ChangeNotifier {
   final DiscoveryService discoveryService;
@@ -25,10 +43,9 @@ class AppState extends ChangeNotifier {
   final NotificationSyncService notificationSyncService;
   final NotificationsService notificationsService;
   final FileTransferService fileTransferService;
-  late final ScreenMirrorService mirrorService;
-  final _mirrorRequestController = StreamController<Map<String, dynamic>>.broadcast();
-  Stream<Map<String, dynamic>> get mirrorRequestStream => _mirrorRequestController.stream;
-  
+  final WebRTCP2PService webrtcP2PService;
+
+
   ClipboardController? _clipboardController;
 
   static const _platform = MethodChannel('wire/platform');
@@ -73,6 +90,7 @@ class AppState extends ChangeNotifier {
     required this.notificationSyncService,
     required this.notificationsService,
     required this.fileTransferService,
+    required this.webrtcP2PService,
   });
 
   bool _isFirstRun = true;
@@ -101,10 +119,10 @@ class AppState extends ChangeNotifier {
   bool get notificationSyncEnabled => _notificationSyncEnabled;
   bool _silentClipboard = true;
   bool get silentClipboard => _silentClipboard;
-  bool _labsMirrorFeaturesEnabled = true;
-  bool get labsMirrorFeaturesEnabled => _labsMirrorFeaturesEnabled;
   bool _labsMountFinderEnabled = true;
   bool get labsMountFinderEnabled => _labsMountFinderEnabled;
+  bool _p2pEnabled = false;
+  bool get p2pEnabled => _p2pEnabled;
 
   String? _downloadsPath;
   String? get downloadsPath => _downloadsPath;
@@ -122,6 +140,10 @@ class AppState extends ChangeNotifier {
   BatteryState _batteryState = BatteryState.unknown;
   BatteryState get batteryState => _batteryState;
 
+  // File Transfer
+  FileReceiveProgress? _lastReceivedFile;
+  FileReceiveProgress? get lastReceivedFile => _lastReceivedFile;
+
   // Remote Status
   int? _remoteBattery;
   int? get remoteBattery => _remoteBattery;
@@ -134,7 +156,19 @@ class AppState extends ChangeNotifier {
 
   ConnectionStatus _lastStatus = ConnectionStatus.idle;
   ConnectionStatus get lastStatus => _lastStatus;
-  
+
+  ConnectionMode _connectionMode = ConnectionMode.local;
+  ConnectionMode get connectionMode => _connectionMode;
+
+  String _userName = 'Guest';
+  String get userName => _userName;
+
+  String? _userAvatar;
+  String? get userAvatar => _userAvatar;
+
+  final List<ReceivedFile> _recentTransfers = [];
+  List<ReceivedFile> get recentTransfers => List.unmodifiable(_recentTransfers);
+
   String? get errorMessage => webSocketService.errorMessage;
 
   void _scheduleNotify() {
@@ -149,7 +183,7 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     _deviceId = await identityService.getOrCreateDeviceId();
     _deviceName = await identityService.getDeviceName() ?? 'Unknown Device';
-    
+
     await pairingService.init();
     if (pairingService.devices.isNotEmpty) {
       _isFirstRun = false;
@@ -160,27 +194,40 @@ class AppState extends ChangeNotifier {
     _autoConnectEnabled = prefs.getBool('auto_connect') ?? true;
     _notificationSyncEnabled = prefs.getBool('notification_sync_enabled') ?? false;
     _silentClipboard = prefs.getBool('silent_clipboard') ?? true;
-    _labsMirrorFeaturesEnabled = prefs.getBool('labs_mirror_features_enabled') ?? true;
     _labsMountFinderEnabled = prefs.getBool('labs_mount_finder_enabled') ?? true;
     _isSyncPaused = prefs.getBool('sync_paused') ?? false;
+    _p2pEnabled = prefs.getBool('p2p_enabled') ?? false;
+    _connectionMode = ConnectionMode.values[prefs.getInt('connection_mode') ?? 0];
+    _userName = prefs.getString('user_name') ?? 'Guest';
+    _userAvatar = prefs.getString('user_avatar');
     _downloadsPath = prefs.getString('downloads_path');
 
-    mirrorService = ScreenMirrorService(
-      deviceId: _deviceId,
-      onSendSignal: (signal) => webSocketService.send(signal),
-    );
+
 
     try {
       await webSocketService.startServer();
       await fileTransferService.startServer();
-      
+      await webrtcP2PService.initialize();
+      await webrtcP2PService.startListening(_deviceId);
+
+      fileTransferService.receiveComplete.listen((progress) {
+        _recentTransfers.insert(0, ReceivedFile(
+          name: progress.name,
+          path: progress.path,
+          size: progress.total,
+          timestamp: DateTime.now(),
+        ));
+        if (_recentTransfers.length > 5) _recentTransfers.removeLast();
+        _scheduleNotify();
+      });
+
       if (_discoveryEnabled) {
         _startLocalDiscovery();
       }
     } catch (e) {
       debugPrint('Failed to start network services: $e');
     }
-    
+
     notifyListeners();
 
     webSocketService.status.listen((status) {
@@ -191,7 +238,7 @@ class AppState extends ChangeNotifier {
         _reconnectTimer?.cancel();
         _reconnectTimer = null;
         _sendIdentity();
-      } else if (status == ConnectionStatus.disconnected && prev == ConnectionStatus.connected) {
+      } else if ((status == ConnectionStatus.disconnected || status == ConnectionStatus.error) && prev == ConnectionStatus.connected) {
         _startAutoReconnect();
       }
       _scheduleNotify();
@@ -200,7 +247,17 @@ class AppState extends ChangeNotifier {
 
     webSocketService.messages.listen(_handleMessage);
 
-    if (Platform.isAndroid) {
+    fileTransferService.receiveComplete.listen((progress) {
+      _lastReceivedFile = progress;
+      _scheduleNotify();
+      // Show local notification
+      notificationsService.showNotification(
+        title: 'File Received',
+        body: '${progress.name} has been saved.',
+      );
+    });
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       notificationSyncService.onNotificationReceived.listen((notif) {
         if (_notificationSyncEnabled && pairingService.activeDevice != null) {
           webSocketService.send({
@@ -224,7 +281,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _setupAudioBridge() {
-    if (Platform.isMacOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
       const audioChannel = EventChannel('wire/audio_stream');
       audioChannel.receiveBroadcastStream().listen((data) {
         if (data is Uint8List && pairingService.activeDevice != null) {
@@ -240,12 +297,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> _setupMacFileServer() async {
     try {
-      if (Platform.isMacOS) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
         final home = Platform.environment['HOME'];
         if (home != null) {
           fileTransferService.setAllowedRoots([home]);
         }
-      } else if (Platform.isAndroid) {
+      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         fileTransferService.setAllowedRoots(['/storage/emulated/0', '/sdcard']);
       }
     } catch (e) {
@@ -256,7 +313,7 @@ class AppState extends ChangeNotifier {
   // ── macOS Status Bar Integration ───────────────────────────────────────────
 
   void _setupStatusBarChannel() {
-    if (!Platform.isMacOS) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return;
     const statusBarChannel = MethodChannel('wire/statusbar');
     statusBarChannel.setMethodCallHandler((call) async {
       if (call.method == 'findPhone') {
@@ -266,18 +323,22 @@ class AppState extends ChangeNotifier {
   }
 
   void _updateMacStatusBar() {
-    if (!Platform.isMacOS) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return;
     final connected = _lastStatus == ConnectionStatus.connected &&
         pairingService.activeDevice != null;
     final peerName = pairingService.activeDevice?.name;
+    final battery = connected ? (pairingService.activeDevice?.batteryLevel ?? _remoteBattery) : null;
+
     _platform.invokeMethod('updateStatusBar', {
       'connected': connected,
       'peerName': peerName,
+      'battery': battery,
+      'pingMs': _pingMs,
     }).catchError((_) {});
   }
 
   void _updateMacMountStatus() {
-    if (!Platform.isMacOS) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return;
     _platform.invokeMethod('updateMountStatus', {
       'mounted': _isUsbMounted,
     }).catchError((_) {});
@@ -288,7 +349,7 @@ class AppState extends ChangeNotifier {
       'type': 'identity',
       'deviceId': _deviceId,
       'deviceName': _deviceName,
-      'os': Platform.isAndroid ? 'android' : (Platform.isMacOS ? 'macos' : 'unknown'),
+      'os': (kIsWeb ? false : defaultTargetPlatform == TargetPlatform.android) ? 'android' : ((kIsWeb ? false : defaultTargetPlatform == TargetPlatform.macOS) ? 'macos' : 'unknown'),
       'battery': _batteryLevel,
       'isCharging': _batteryState == BatteryState.charging,
       'filePort': fileTransferService.actualPort,
@@ -314,29 +375,6 @@ class AppState extends ChangeNotifier {
           body: body,
           category: NotificationCategory.system,
         );
-      } else if (type == 'mouse_event' && Platform.isMacOS) {
-        await _platform.invokeMethod('dispatchMouseEvent', {
-          'dx': message['dx'],
-          'dy': message['dy'],
-          'action': message['action'],
-        });
-      } else if (type == 'keyboard_event' && Platform.isMacOS) {
-        await _platform.invokeMethod('inputKeyEvent', {
-          'keyCode': message['keyCode'],
-          'action': message['action'],
-        });
-      } else if (type == 'inputText' && Platform.isMacOS) {
-        await _platform.invokeMethod('inputText', {
-          'text': message['text'],
-        });
-      } else if (type == 'screen_offer' || type == 'camera_offer') {
-        _onRemoteMirrorRequest(message, isCamera: type == 'camera_offer');
-      } else if (type == 'screen_answer' || type == 'camera_answer') {
-        mirrorService.receiveAnswer(message['sdp']?.toString() ?? '');
-      } else if (type == 'screen_ice' || type == 'camera_ice') {
-        mirrorService.addIceCandidate(message);
-      } else if (type == 'screen_stop') {
-        mirrorService.stop();
       } else if (type == 'clipboard') {
         if (!_isSyncPaused) {
           final text = message['text']?.toString();
@@ -347,9 +385,9 @@ class AppState extends ChangeNotifier {
       } else if (type == 'find_phone') {
         // Both platforms now support native ringing
         await _platform.invokeMethod('ringPhone');
-        
+
         // Still show notification as fallback/visual cue
-        if (!Platform.isAndroid) {
+        if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
           notificationsService.showNotification(
             title: 'Find Device',
             body: 'Someone is looking for this device!',
@@ -357,7 +395,7 @@ class AppState extends ChangeNotifier {
           );
         }
       } else if (type != null && type.startsWith('media_')) {
-         if (Platform.isAndroid) {
+         if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
            final action = type.replaceFirst('media_', '');
            final method = switch (action) {
              'play_pause' => 'mediaPlayPause',
@@ -373,14 +411,14 @@ class AppState extends ChangeNotifier {
       } else if (type == 'handoff') {
          final url = message['url']?.toString();
          if (url != null && url.isNotEmpty) {
-           if (Platform.isMacOS) {
+           if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
              await Process.run('open', [url]);
            }
            // Android handoff is handled in main.dart _handleHandoff
          }
       }
     } on PlatformException catch (e) {
-      if (e.code == 'ACCESSIBILITY_REQUIRED' && Platform.isMacOS) {
+      if (e.code == 'ACCESSIBILITY_REQUIRED' && !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
         _throttledAccessibilityWarning();
       }
       // Only log once per 5 seconds to avoid flooding console
@@ -395,68 +433,61 @@ class AppState extends ChangeNotifier {
     final name = message['deviceName']?.toString();
     final os = message['os']?.toString() ?? 'unknown';
     final filePort = (message['filePort'] as num?)?.toInt() ?? 5758;
-    
+
     if (id != null && name != null) {
       final existing = pairingService.devices.any((d) => d.deviceId == id);
       if (existing) {
         final dev = pairingService.devices.firstWhere((d) => d.deviceId == id);
         pairingService.addOrUpdateDevice(dev.copyWith(
-          lastIp: webSocketService.lastClientAddress ?? '', 
+          lastIp: webSocketService.lastClientAddress ?? '',
           lastSeenAt: DateTime.now().millisecondsSinceEpoch,
           osType: os,
           batteryLevel: message['battery'] as int?,
           isCharging: message['isCharging'] as bool?,
           filePort: filePort,
         ));
-      }
-
-      if (pairingService.isTrusted(id) || _isPairingInProgress) {
-        final activeId = pairingService.activeDevice?.deviceId;
-        if (activeId != id) {
-          if (_isPairingInProgress) {
-            pairingService.addOrUpdateDevice(PairedDevice(
-              deviceId: id,
-              name: name,
-              lastIp: webSocketService.lastClientAddress ?? '',
-              isTrusted: true,
-              osType: os,
-              lastSeenAt: DateTime.now().millisecondsSinceEpoch,
-              filePort: filePort,
-            ));
-            _isPairingInProgress = false;
-          }
-          
-          pairingService.setActiveDevice(id);
-          _sendIdentity(); 
-          _scheduleNotify();
-          _updateMacStatusBar();
+        
+        if (_isPairingInProgress && !dev.isTrusted) {
+           pairingService.setTrusted(id, true);
         }
+      } else {
+        // Unknown device connected
+        pairingService.addOrUpdateDevice(PairedDevice(
+          deviceId: id,
+          name: name,
+          lastIp: webSocketService.lastClientAddress ?? '',
+          isTrusted: _isPairingInProgress, 
+          osType: os,
+          lastSeenAt: DateTime.now().millisecondsSinceEpoch,
+          filePort: filePort,
+        ));
       }
+
+      final activeId = pairingService.activeDevice?.deviceId;
+      if (activeId != id) {
+        pairingService.setTrusted(id, true);
+        pairingService.setActiveDevice(id);
+        _sendIdentity();
+        _scheduleNotify();
+        _updateMacStatusBar();
+      }
+      
+      _isPairingInProgress = false;
     }
   }
 
-  Future<void> _onRemoteMirrorRequest(Map<String, dynamic> message, {bool isCamera = false}) async {
-    try {
-      final renderer = await mirrorService.receiveOffer(message['sdp']?.toString() ?? '', isCamera: isCamera);
-      _mirrorRequestController.add({
-        'isCamera': isCamera,
-        'renderer': renderer,
-      });
-    } catch (e) {
-      debugPrint('Error receiving mirror offer: $e');
-    }
-  }
+
 
   void _startAutoReconnect() {
     if (_reconnectTimer != null) return;
     final active = pairingService.activeDevice;
     if (active == null || active.lastIp.isEmpty) return;
-    
+
     _reconnectAttempts++;
     if (_reconnectAttempts > _maxReconnectAttempts) return;
 
     final delay = Duration(seconds: (2 * _reconnectAttempts).clamp(2, 30));
-    
+
     _reconnectTimer = Timer(delay, () async {
       _reconnectTimer = null;
       try {
@@ -471,10 +502,10 @@ class AppState extends ChangeNotifier {
   Future<void> toggleSetting(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
-    
+
     switch (key) {
-      case 'discovery_enabled': 
-        _discoveryEnabled = value; 
+      case 'discovery_enabled':
+        _discoveryEnabled = value;
         if (value) {
           _startLocalDiscovery();
         } else {
@@ -484,9 +515,8 @@ class AppState extends ChangeNotifier {
       case 'auto_connect': _autoConnectEnabled = value; break;
       case 'notification_sync_enabled': _notificationSyncEnabled = value; break;
       case 'silent_clipboard': _silentClipboard = value; break;
-      case 'labs_mirror_features_enabled': _labsMirrorFeaturesEnabled = value; break;
       case 'labs_mount_finder_enabled': _labsMountFinderEnabled = value; break;
-      case 'sync_paused': 
+      case 'sync_paused':
         _isSyncPaused = value;
         _clipboardController?.setSyncPaused(value);
         break;
@@ -501,18 +531,46 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setConnectionMode(ConnectionMode mode) async {
+    _connectionMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('connection_mode', mode.index);
+    notifyListeners();
+  }
+
+  Future<void> updateProfile({String? name, String? avatar}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (name != null) {
+      _userName = name;
+      await prefs.setString('user_name', name);
+    }
+    if (avatar != null) {
+      _userAvatar = avatar;
+      await prefs.setString('user_avatar', avatar);
+    }
+    notifyListeners();
+  }
+
+  Future<void> renameLocalDevice(String newName) async {
+    await identityService.setDeviceName(newName);
+    _deviceName = newName;
+    _sendIdentity(); // Inform active peer
+    notifyListeners();
+  }
+
   void setBatteryStatus(int level, BatteryState state) {
     if (_batteryLevel == level && _batteryState == state) return;
     _batteryLevel = level;
     _batteryState = state;
     _scheduleNotify();
+    _updateMacStatusBar();
   }
 
   void setRemoteStatus(int? battery, bool? isCharging) {
     if (_remoteBattery == battery && _remoteIsCharging == isCharging) return;
     _remoteBattery = battery;
     _remoteIsCharging = isCharging;
-    
+
     final active = pairingService.activeDevice;
     if (active != null) {
       pairingService.addOrUpdateDevice(active.copyWith(
@@ -542,7 +600,7 @@ class AppState extends ChangeNotifier {
       filePort: fileTransferService.actualPort,
       onPeerFound: (info) {
         addDiscoveryPeer(info);
-        
+
         // Update paired device info if it exists
         final existingDev = pairingService.devices.firstWhere(
           (d) => d.deviceId == info.deviceId,
@@ -552,14 +610,14 @@ class AppState extends ChangeNotifier {
         );
         if (existingDev.deviceId.isNotEmpty) {
           pairingService.addOrUpdateDevice(existingDev.copyWith(
-            lastIp: info.address.address,
+            lastIp: info.address,
             filePort: info.filePort,
             lastSeenAt: DateTime.now().millisecondsSinceEpoch,
           ));
         }
 
         if (_autoConnectEnabled && pairingService.isTrusted(info.deviceId)) {
-          webSocketService.connectToPeer(info.address.address, portOverride: info.wsPort);
+          webSocketService.connectToPeer(info.address, portOverride: info.wsPort);
         }
       },
     );
@@ -591,15 +649,15 @@ class AppState extends ChangeNotifier {
     _reconnectAttempts = 0;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    
+
     await webSocketService.connectToPeer(host);
     _sendIdentity();
     BackgroundService.savePeerHost(host);
-    
+
     Future.delayed(const Duration(seconds: 30), () {
       _isPairingInProgress = false;
     });
-    
+
     if (targetId != null && pairingService.isTrusted(targetId)) {
       pairingService.setActiveDevice(targetId);
       notifyListeners();
@@ -609,9 +667,18 @@ class AppState extends ChangeNotifier {
   Future<void> reconnect() async {
     final active = pairingService.activeDevice;
     if (active != null && active.lastIp.isNotEmpty) {
+      if (_connectionMode == ConnectionMode.p2p) {
+        await webrtcP2PService.initiateConnection(_deviceId, active.deviceId);
+        return;
+      }
+
       _reconnectAttempts = 0;
-      await webSocketService.connectToPeer(active.lastIp);
-      _sendIdentity();
+      try {
+        await webSocketService.connectToPeer(active.lastIp);
+        _sendIdentity();
+      } catch (_) {
+        _startAutoReconnect();
+      }
     }
   }
 
@@ -660,7 +727,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> openFileLocation(String filePath) async {
     try {
-      if (Platform.isMacOS) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
         // Use the existing revealInFinder method on macOS
         await _platform.invokeMethod('revealInFinder', {'path': filePath});
       } else if (Platform.isAndroid) {
@@ -677,21 +744,22 @@ class AppState extends ChangeNotifier {
     if (active == null) throw Exception('No active device');
 
     try {
-      await fileTransferService.sendFile(
-        filePath: filePath,
+      await fileTransferService.sendEntity(
+        entityPath: filePath,
         host: active.lastIp,
-        port: 5758,
-        onProgress: (sent, total) {
+        port: active.filePort,
+        onProgress: (sent, total, currentFile) {
+          // You could update a progress state here if needed
           _scheduleNotify();
         },
       );
       notificationsService.showNotification(
-        title: 'File Sent',
-        body: 'Successfully sent ${filePath.split(Platform.pathSeparator).last}',
+        title: 'Transfer Complete',
+        body: 'Successfully sent ${p.basename(filePath)}',
       );
     } catch (e) {
       notificationsService.showNotification(
-        title: 'Send Failed',
+        title: 'Transfer Failed',
         body: 'Error: $e',
       );
       rethrow;

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 
 class FocusModeService {
@@ -12,7 +13,7 @@ class FocusModeService {
   bool get isFocusEnabled => _isFocusEnabled;
 
   Future<void> init() async {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       // On Android we can listen for DND changes via a broadcast receiver (native side)
       // or check periodically if simpler. Let's assume native push for now.
     }

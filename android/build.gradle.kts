@@ -20,10 +20,11 @@ subprojects {
 }
 
 subprojects {
-    if (name == "qr_code_scanner") {
-        plugins.withId("com.android.library") {
-            extensions.configure<com.android.build.gradle.LibraryExtension> {
-                namespace = "dev.sagarm.wire.qr_code_scanner"
+    afterEvaluate {
+        if (plugins.hasPlugin("com.android.library") || plugins.hasPlugin("com.android.application")) {
+            val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+            if (android?.namespace == null) {
+                android?.namespace = "dev.sagarm.wire.${name.replace("-", "_")}"
             }
         }
     }

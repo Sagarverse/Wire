@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'glass_card.dart';
 import '../../services/discovery_service.dart';
 
@@ -159,11 +159,8 @@ class _ManualPairDialogState extends State<ManualPairDialog> {
       final port = int.tryParse(_portController.text.trim()) ?? 5757;
       final name = _nameController.text.trim().isEmpty ? 'Manual Device' : _nameController.text.trim();
       
-      // Basic IP validation
-      final address = InternetAddress(ip);
-      
       final peer = DiscoveryPeerInfo(
-        address: address,
+        address: ip,
         deviceId: 'manual_${DateTime.now().millisecondsSinceEpoch}', // Temporary ID till handshake
         deviceName: name,
         wsPort: port,

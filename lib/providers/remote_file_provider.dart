@@ -31,7 +31,7 @@ class RemoteFileEntry {
 class RemoteFileProvider extends ChangeNotifier {
   final FileTransferService _fileTransferService;
   String _peerHost;
-  final int _filePort;
+  int _filePort;
 
   List<RemoteFileEntry> _entries = [];
   String _searchQuery = '';
@@ -52,9 +52,10 @@ class RemoteFileProvider extends ChangeNotifier {
         _peerHost = peerHost,
         _filePort = filePort;
 
-  void updateHost(String host) {
-    if (_peerHost != host) {
+  void updateConnectionInfo(String host, int port) {
+    if (_peerHost != host || _filePort != port) {
       _peerHost = host;
+      _filePort = port;
       // If host changed significantly (not just a minor IP update for same device), 
       // we might want to reset, but for now we just update for connectivity.
       notifyListeners();

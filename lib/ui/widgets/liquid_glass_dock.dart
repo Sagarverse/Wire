@@ -37,11 +37,11 @@ class LiquidGlassDock extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final useCompact = horizontal && constraints.maxWidth < 500;
-        
+
         return ClipRRect(
           borderRadius: BorderRadius.circular(28),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: Container(
               padding: EdgeInsets.symmetric(
                 horizontal: horizontal ? 10 : 8,
@@ -53,19 +53,23 @@ class LiquidGlassDock extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    (isDark ? const Color(0xFF141E30) : Colors.white).withValues(
-                      alpha: isDark ? 0.82 : 0.84,
+                    (isDark ? Colors.black : Colors.white).withValues(
+                      alpha: isDark ? 0.3 : 0.4,
                     ),
-                    (isDark ? const Color(0xFF0D1627) : const Color(0xFFF1F6FF))
-                        .withValues(alpha: isDark ? 0.72 : 0.78),
+                    (isDark ? Colors.black26 : Colors.white38).withValues(
+                      alpha: isDark ? 0.2 : 0.25,
+                    ),
                   ],
                 ),
                 border: Border.all(
-                  color: scheme.primary.withValues(alpha: isDark ? 0.22 : 0.16),
+                  color: (isDark ? Colors.white : scheme.primary).withValues(alpha: isDark ? 0.15 : 0.12),
+                  width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: scheme.primary.withValues(alpha: isDark ? 0.18 : 0.08),
+                    color: scheme.primary.withValues(
+                      alpha: isDark ? 0.18 : 0.08,
+                    ),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                     spreadRadius: -4,
@@ -84,7 +88,7 @@ class LiquidGlassDock extends StatelessWidget {
                 children: List.generate(items.length, (index) {
                   final item = items[index];
                   final selected = index == selectedIndex;
-    
+
                   return Padding(
                     padding: EdgeInsets.symmetric(
                       horizontal: horizontal ? 4 : 0,
@@ -103,7 +107,7 @@ class LiquidGlassDock extends StatelessWidget {
             ),
           ),
         );
-      }
+      },
     );
   }
 }
@@ -134,10 +138,10 @@ class _DockButton extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         color: selected
-            ? scheme.primary.withValues(alpha: isDark ? 0.26 : 0.16)
+            ? scheme.primary.withValues(alpha: isDark ? 0.4 : 0.25)
             : Colors.transparent,
         border: selected
-            ? Border.all(color: scheme.primary.withValues(alpha: 0.32))
+            ? Border.all(color: (isDark ? Colors.white : scheme.primary).withValues(alpha: 0.4), width: 1.2)
             : null,
       ),
       child: InkWell(

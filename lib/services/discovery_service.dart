@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 class DiscoveryPeerInfo {
   DiscoveryPeerInfo({
@@ -11,7 +12,7 @@ class DiscoveryPeerInfo {
     required this.filePort,
   });
 
-  final InternetAddress address;
+  final String address;
   final String deviceId;
   final String deviceName;
   final int wsPort;
@@ -19,7 +20,7 @@ class DiscoveryPeerInfo {
 }
 
 class DiscoveryService {
-  DiscoveryService({this.port = 45454, this.broadcastInterval = const Duration(seconds: 3)});
+  DiscoveryService({this.port = 45454, this.broadcastInterval = const Duration(seconds: 1)});
 
   final int port;
   final Duration broadcastInterval;
@@ -36,14 +37,35 @@ class DiscoveryService {
     if (_socket != null) {
       return;
     }
+    if (kIsWeb) return;
+
+    // Android does not support reusePort on all kernels — skip it there to avoid
+    // a noisy Dart socket error in the log. On macOS/desktop it works fine.
+    final useReusePort = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
     try {
-      _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port, reuseAddress: true, reusePort: true);
-    } catch (_) {
-      // Port might be held briefly after restart — retry with reusePort
-      try {
-        _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port, reuseAddress: true);
-      } catch (_) {
-        return; // Can't bind, skip discovery
+      _socket = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        port,
+        reuseAddress: true,
+        reusePort: useReusePort,
+      );
+    } catch (e) {
+      if (useReusePort) {
+        // Fallback: retry without reusePort
+        try {
+          _socket = await RawDatagramSocket.bind(
+            InternetAddress.anyIPv4,
+            port,
+            reuseAddress: true,
+            reusePort: false,
+          );
+        } catch (_) {
+          debugPrint('Discovery: could not bind UDP socket, skipping.');
+          return;
+        }
+      } else {
+        debugPrint('Discovery: could not bind UDP socket, skipping.');
+        return;
       }
     }
     _socket!.broadcastEnabled = true;
@@ -63,7 +85,7 @@ class DiscoveryService {
             final file = message['filePort'] as int? ?? filePort;
             onPeerFound(
               DiscoveryPeerInfo(
-                address: datagram.address,
+                address: datagram.address.address,
                 deviceId: peerId,
                 deviceName: peerName,
                 wsPort: ws,
@@ -88,8 +110,10 @@ class DiscoveryService {
           'filePort': filePort,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
-        
-        _socket!.send(utf8.encode(payload), InternetAddress('255.255.255.255'), port);
+
+        if (!kIsWeb) {
+          _socket!.send(utf8.encode(payload), InternetAddress('255.255.255.255'), port);
+        }
       } catch (e) {
         // ignore broadcast errors
       }

@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import 'ui/widgets/received_file_popup.dart';
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+
 
 import 'models/transfer_item.dart';
 import 'services/app_identity.dart';
@@ -25,14 +28,14 @@ import 'services/pairing_service.dart';
 import 'services/permissions_service.dart';
 import 'services/tray_service.dart';
 import 'services/websocket_service.dart';
+import 'services/webrtc_p2p_service.dart';
 import 'ui/pages/control_hub_page.dart';
 import 'ui/pages/files_page.dart';
 import 'ui/pages/sms_page.dart';
 import 'ui/pages/home_page.dart';
 import 'ui/pages/onboarding_page.dart';
 import 'ui/pages/settings_page.dart';
-import 'ui/pages/screen_mirror_page.dart';
-import 'ui/pages/camera_viewer_page.dart';
+
 import 'ui/theme/app_theme.dart';
 import 'ui/widgets/liquid_glass_dock.dart';
 import 'providers/app_state.dart';
@@ -44,7 +47,7 @@ import 'controllers/clipboard_controller.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppTheme.initThemeMode();
-  
+
   final identityService = AppIdentity();
   final discoveryService = DiscoveryService();
   final pairingService = PairingService();
@@ -55,6 +58,7 @@ Future<void> main() async {
   final fileTransferService = FileTransferService(port: 5758);
   final notificationsService = NotificationsService();
   final notificationSyncService = NotificationSyncService();
+  final webrtcP2PService = WebRTCP2PService();
 
   runApp(
     MultiProvider(
@@ -68,6 +72,7 @@ Future<void> main() async {
             notificationsService: notificationsService,
             notificationSyncService: notificationSyncService,
             fileTransferService: fileTransferService,
+            webrtcP2PService: webrtcP2PService,
           ),
         ),
         ChangeNotifierProvider(
@@ -77,9 +82,11 @@ Future<void> main() async {
             webSocketService: webSocketService,
           ),
         ),
+        Provider<HistoryService>.value(value: historyService),
         ChangeNotifierProvider(
           create: (_) => FileTransferProvider(
             fileTransferService: fileTransferService,
+            historyService: historyService,
           ),
         ),
         ChangeNotifierProxyProvider<AppState, SmsProvider>(
@@ -100,7 +107,7 @@ Future<void> main() async {
           ),
           update: (context, appState, previous) {
             final active = appState.pairingService.activeDevice;
-            previous?.updateHost(active?.lastIp ?? '');
+            previous?.updateConnectionInfo(active?.lastIp ?? '', active?.filePort ?? 5758);
             return previous!;
           },
         ),
@@ -129,7 +136,7 @@ class _WireAppState extends State<WireApp> {
   Future<void> _initWithProviders() async {
     final appState = context.read<AppState>();
     final clipboardController = context.read<ClipboardController>();
-    
+
     appState.setClipboardController(clipboardController);
     await appState.init();
     await clipboardController.init();
@@ -176,7 +183,7 @@ class _WireAppState extends State<WireApp> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(body: Center(child: CircularProgressIndicator()));
               }
-              
+
               return Consumer<AppState>(
                 builder: (context, appState, _) {
                   if (appState.isFirstRun) {
@@ -184,7 +191,7 @@ class _WireAppState extends State<WireApp> {
                       onFinish: _completeOnboarding,
                     );
                   }
-                  
+
                   return const WireHomePage();
                 },
               );
@@ -205,7 +212,7 @@ class WireHomePage extends StatefulWidget {
 
 class _WireHomePageState extends State<WireHomePage> {
   static const _platformChannel = MethodChannel('wire/platform');
-  final _historyService = HistoryService();
+
   late final WebSocketService _webSocketService;
   late final FileTransferService _fileTransferService;
   final _trayService = TrayService();
@@ -215,18 +222,18 @@ class _WireHomePageState extends State<WireHomePage> {
 
   final PageController _pageController = PageController();
   int _navigationIndex = 0;
-  final List<TransferItem> _transfers = [];
-  
-  StreamSubscription<FileReceiveProgress>? _receiveProgressSub;
+
   StreamSubscription<FileReceiveProgress>? _receiveCompleteSub;
-  StreamSubscription<Map<String, dynamic>>? _mirrorSub;
+
   StreamSubscription<Map<String, dynamic>>? _smsSub;
-  
+
   final _backgroundService = BackgroundService();
   final _battery = Battery();
 
   // Platform-specific: Messages tab only on macOS
   late final List<_NavItem> _navItems;
+
+  FileReceiveProgress? _pendingPopup;
 
   @override
   void initState() {
@@ -234,17 +241,17 @@ class _WireHomePageState extends State<WireHomePage> {
     final app = context.read<AppState>();
     _webSocketService = app.webSocketService;
     _fileTransferService = app.fileTransferService;
-    
+
     // Build navigation items: Messages only on macOS
     _navItems = [
       const _NavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'Home'),
       const _NavItem(icon: Icons.control_camera_outlined, selectedIcon: Icons.control_camera_rounded, label: 'Control'),
       const _NavItem(icon: Icons.folder_outlined, selectedIcon: Icons.folder_rounded, label: 'Files'),
-      if (Platform.isMacOS)
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS)
         const _NavItem(icon: Icons.chat_outlined, selectedIcon: Icons.chat_rounded, label: 'Messages'),
       const _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings_rounded, label: 'Settings'),
     ];
-    
+
     _handoffService.onHandoffReceived.listen(_handleHandoff);
     _focusModeService.onFocusStateChanged.listen((enabled) {
       if (!mounted) return;
@@ -262,9 +269,8 @@ class _WireHomePageState extends State<WireHomePage> {
   @override
   void dispose() {
     _pageController.dispose();
-    _receiveProgressSub?.cancel();
     _receiveCompleteSub?.cancel();
-    _mirrorSub?.cancel();
+
     _smsSub?.cancel();
     super.dispose();
   }
@@ -286,7 +292,7 @@ class _WireHomePageState extends State<WireHomePage> {
       const ControlHubPage(padding: EdgeInsets.only(bottom: 120)),
       const FilesPage(padding: EdgeInsets.only(bottom: 120)),
     ];
-    if (Platform.isMacOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
       pages.add(const SmsPage(padding: EdgeInsets.only(bottom: 120)));
     }
     pages.add(SettingsPage(
@@ -303,8 +309,8 @@ class _WireHomePageState extends State<WireHomePage> {
 
     await appState.notificationsService.init(onSelectNotification: _onNotificationTap);
     await _focusModeService.init();
-    
-    if (Platform.isAndroid) {
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await _backgroundService.init();
       await _backgroundService.start();
     }
@@ -321,7 +327,7 @@ class _WireHomePageState extends State<WireHomePage> {
     _smsSub = _webSocketService.messages.listen((message) {
       if (!mounted) return;
       final type = message['type']?.toString() ?? '';
-      if (Platform.isAndroid) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         _handleAndroidMessage(type, message, appState);
       }
       if (type == 'handoff') {
@@ -330,37 +336,9 @@ class _WireHomePageState extends State<WireHomePage> {
       }
     });
 
-    _receiveProgressSub = _fileTransferService.receiveProgress.listen(_handleReceiveProgress);
     _receiveCompleteSub = _fileTransferService.receiveComplete.listen(_handleReceiveComplete);
 
-    _mirrorSub = appState.mirrorRequestStream.listen((data) {
-      if (!mounted) return;
-      final isCamera = data['isCamera'] == true;
-      final renderer = data['renderer'] as RTCVideoRenderer;
-      
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => isCamera 
-            ? CameraViewerPage(
-                mirrorService: appState.mirrorService,
-                onFlipCamera: () => appState.mirrorService.switchCamera(),
-              )
-            : ScreenMirrorPage(
-                mirrorService: appState.mirrorService,
-                initialRenderer: renderer,
-                onSendFile: (path) => appState.pushFile(path),
-                onStop: () => appState.mirrorService.stop(),
-              ),
-        ),
-      );
-    });
 
-    final transferHistory = await _historyService.getTransferHistory();
-    if (mounted) {
-      setState(() {
-        _transfers.addAll(transferHistory);
-      });
-    }
 
     if (appState.autoConnectEnabled && appState.pairingService.activeDevice != null) {
       appState.reconnect();
@@ -401,14 +379,14 @@ class _WireHomePageState extends State<WireHomePage> {
   }
 
   Future<void> _initTray() async {
-    if (!Platform.isMacOS) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return;
     final appState = context.read<AppState>();
     final clipboardController = context.read<ClipboardController>();
-    
+
     await _trayService.init(
       title: 'Wire Sync',
       clipboardItems: clipboardController.history.map((e) => e.text).toList(),
-      transferItems: _transfers.map((e) => e.name).toList(),
+      transferItems: [],
       paused: appState.isSyncPaused,
       discoveryEnabled: appState.discoveryEnabled,
       connected: _webSocketService.isClientConnected,
@@ -422,9 +400,9 @@ class _WireHomePageState extends State<WireHomePage> {
 
   void _handleHandoff(String url) async {
     if (url.isEmpty) return;
-    if (Platform.isMacOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
       await Process.run('open', [url]);
-    } else if (Platform.isAndroid) {
+    } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       try {
         await _platformChannel.invokeMethod('openUrl', {'url': url});
       } catch (_) {
@@ -438,65 +416,37 @@ class _WireHomePageState extends State<WireHomePage> {
 
   void _sendBatteryStatus() {
     final appState = context.read<AppState>();
-    _webSocketService.send({
+    final status = {
       'type': 'status',
       'battery': appState.batteryLevel,
       'isCharging': appState.batteryState == BatteryState.charging,
-    });
-  }
-
-  void _handleReceiveProgress(FileReceiveProgress progress) {
-    final existing = _transfers.where((item) => item.path == progress.path).toList();
-    if (existing.isEmpty) {
-      final item = TransferItem(
-        id: progress.path,
-        name: progress.name,
-        total: progress.total,
-        direction: 'receive',
-        path: progress.path,
-        status: 'receiving',
-        startTime: DateTime.now(),
-      );
-      item.progress = progress.total == 0 ? 0 : progress.received / progress.total;
-      item.bytesTransferred = progress.received;
-      if (mounted) setState(() => _transfers.insert(0, item));
-    } else {
-      if (mounted) {
-        setState(() {
-          final item = existing.first;
-          item.progress = progress.total == 0 ? 0 : progress.received / progress.total;
-          item.status = 'receiving';
-          item.bytesTransferred = progress.received;
-        });
-      }
-    }
+    };
+    _webSocketService.send(status);
+    appState.webrtcP2PService.sendMessage(jsonEncode(status));
   }
 
   Future<void> _handleReceiveComplete(FileReceiveProgress progress) async {
+    if (!mounted) return;
     final app = context.read<AppState>();
-    if (mounted) {
-      setState(() {
-        final item = _transfers.firstWhere(
-          (element) => element.path == progress.path,
-          orElse: () {
-            final newItem = TransferItem(
-              id: progress.path,
-              name: progress.name,
-              total: progress.total,
-              direction: 'receive',
-              path: progress.path,
-              status: 'complete',
-            );
-            _transfers.insert(0, newItem);
-            return newItem;
-          },
-        );
-        item.status = 'complete';
-        item.progress = 1.0;
-        _historyService.saveTransfer(item);
-      });
-    }
+    final item = TransferItem(
+      id: progress.path,
+      name: progress.name,
+      total: progress.total,
+      direction: 'receive',
+      path: progress.path,
+      status: 'complete',
+      progress: 1.0,
+      bytesTransferred: progress.total,
+      startTime: DateTime.now(),
+    );
+    final historyService = context.read<HistoryService>();
+    await historyService.saveTransfer(item);
     app.updateLastSync();
+    
+    setState(() {
+      _pendingPopup = progress;
+    });
+
     await app.notificationsService.showNotification(
       title: 'File received',
       body: '${progress.name} saved to Downloads',
@@ -511,22 +461,22 @@ class _WireHomePageState extends State<WireHomePage> {
         final scheme = Theme.of(context).colorScheme;
         final isPeerConnected = appState.pairingService.activeDevice != null;
         final pages = _buildPages();
-        
+
         return Scaffold(
           backgroundColor: scheme.surface,
           body: DropTarget(
             onDragDone: (detail) async {
               if (detail.files.isNotEmpty && isPeerConnected) {
                  final file = detail.files.first;
-                 try {
-                   await appState.pushFile(file.path);
-                 } catch (e) {
-                   if (context.mounted) {
-                     ScaffoldMessenger.of(context).showSnackBar(
-                       SnackBar(content: Text('Send failed: $e'), backgroundColor: scheme.error),
-                     );
-                   }
-                 }
+                  try {
+                    await appState.pushFile(file.path);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Send failed: $e'), backgroundColor: scheme.error),
+                      );
+                    }
+                  }
               } else if (!isPeerConnected) {
                  ScaffoldMessenger.of(context).showSnackBar(
                    const SnackBar(content: Text('Connect a device first')),
@@ -569,6 +519,25 @@ class _WireHomePageState extends State<WireHomePage> {
                       ),
                     ),
                   ),
+                  if (_pendingPopup != null)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 400),
+                            child: ReceivedFilePopup(
+                              progress: _pendingPopup!,
+                              onDismiss: () {
+                                setState(() {
+                                  _pendingPopup = null;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

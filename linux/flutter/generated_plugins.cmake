@@ -5,10 +5,14 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_drop
   flutter_webrtc
+  irondash_engine_context
+  open_file_linux
+  super_native_extensions
   system_tray
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

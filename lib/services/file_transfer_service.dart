@@ -54,6 +54,7 @@ class FileTransferService {
   }
 
   Future<void> startServer() async {
+    if (kIsWeb) return;
     if (_server != null) {
       return;
     }
@@ -79,30 +80,34 @@ class FileTransferService {
       );
       try {
         if (request.method == 'POST' && request.uri.path == '/upload') {
-          final filename =
-              request.headers.value('x-filename') ??
-              'file_${DateTime.now().millisecondsSinceEpoch}';
-          final total =
-              int.tryParse(request.headers.value('x-size') ?? '') ?? 0;
-          debugPrint('Incoming file: $filename, expected size: $total bytes');
+          final filename = request.headers.value('x-filename') ?? 'file_${DateTime.now().millisecondsSinceEpoch}';
+          final relativePath = request.headers.value('x-relative-path') ?? '';
+          final total = int.tryParse(request.headers.value('x-size') ?? '') ?? 0;
+          final offset = int.tryParse(request.headers.value('x-offset') ?? '0') ?? 0;
+
           final dir = await _getReceiveDirectory();
-          final filePath = p.join(dir.path, filename);
-          debugPrint('Saving to: $filePath');
-          final file = File(filePath);
+          final fullDestPath = relativePath.isNotEmpty ? p.join(dir.path, relativePath) : p.join(dir.path, filename);
+
+          // Create subdirectories if needed
+          final destFile = File(fullDestPath);
+          if (!await destFile.parent.exists()) {
+            await destFile.parent.create(recursive: true);
+          }
+
           IOSink? sink;
-          var received = 0;
+          var received = offset;
           try {
-            sink = file.openWrite();
+            // Append if offset > 0
+            sink = destFile.openWrite(mode: offset > 0 ? FileMode.append : FileMode.write);
             await for (final chunk in request) {
               received += chunk.length;
               sink.add(chunk);
-              debugPrint('Received $received / $total bytes for $filename');
               _receiveProgress.add(
                 FileReceiveProgress(
                   name: filename,
                   received: received,
                   total: total,
-                  path: filePath,
+                  path: fullDestPath,
                 ),
               );
             }
@@ -113,13 +118,12 @@ class FileTransferService {
                 name: filename,
                 received: total,
                 total: total,
-                path: filePath,
+                path: fullDestPath,
               ),
             );
             request.response.statusCode = HttpStatus.ok;
             request.response.write('OK');
           } catch (e) {
-            debugPrint('Error during file receive: $e');
             await sink?.close();
             request.response.statusCode = HttpStatus.internalServerError;
             request.response.write('Error: $e');
@@ -129,8 +133,8 @@ class FileTransferService {
         } else if (request.method == 'GET' && request.uri.path == '/browse') {
           // --- Remote File Browser: list directory ---
           final rawPath = request.uri.queryParameters['path'] ?? '';
-          final Directory browseDir = rawPath.isNotEmpty 
-              ? Directory(rawPath) 
+          final Directory browseDir = rawPath.isNotEmpty
+              ? Directory(rawPath)
               : await _getReceiveDirectory();
 
           if (!_isPathSafe(browseDir.path)) {
@@ -185,13 +189,18 @@ class FileTransferService {
             await request.response.close();
           }
         } else if (request.method == 'GET' && request.uri.path == '/download') {
-          // --- Remote File Download: stream file ---
           final filePath = request.uri.queryParameters['path'] ?? '';
-          if (filePath.isEmpty || !_isPathSafe(filePath) || !await File(filePath).exists()) {
-            request.response.statusCode = filePath.isEmpty || !await File(filePath).exists() 
-                ? HttpStatus.notFound 
-                : HttpStatus.forbidden;
-            request.response.write(filePath.isEmpty || !await File(filePath).exists() ? 'File not found' : 'Access denied');
+          if (filePath.isEmpty) {
+            request.response.statusCode = HttpStatus.notFound;
+            request.response.write('File not found');
+            await request.response.close();
+          } else if (!_isPathSafe(filePath)) {
+            request.response.statusCode = HttpStatus.forbidden;
+            request.response.write('Access denied');
+            await request.response.close();
+          } else if (!await File(filePath).exists()) {
+            request.response.statusCode = HttpStatus.notFound;
+            request.response.write('File not found');
             await request.response.close();
           } else {
             final file = File(filePath);
@@ -232,15 +241,58 @@ class FileTransferService {
     });
   }
 
-  Future<void> sendFile({
-    required String filePath,
+  Future<void> sendEntity({
+    required String entityPath,
     required String host,
     required int port,
+    required void Function(int sent, int total, String currentFile) onProgress,
+  }) async {
+    final entity = FileSystemEntity.isDirectorySync(entityPath) ? Directory(entityPath) : File(entityPath);
+
+    if (entity is File) {
+      await _internalSendFile(
+        file: entity,
+        host: host,
+        port: port,
+        onProgress: (sent, total) => onProgress(sent, total, p.basename(entityPath)),
+      );
+    } else if (entity is Directory) {
+      final files = entity.listSync(recursive: true).whereType<File>().toList();
+      var totalBytes = 0;
+      for (final f in files) {
+        totalBytes += f.lengthSync();
+      }
+
+      var cumulativeSent = 0;
+      for (final f in files) {
+        final relativePath = p.relative(f.path, from: entity.path);
+        final baseFolderName = p.basename(entity.path);
+        final destRelativePath = p.join(baseFolderName, relativePath);
+
+        await _internalSendFile(
+          file: f,
+          host: host,
+          port: port,
+          relativePath: destRelativePath,
+          onProgress: (sent, total) {
+            // This progress is per-file, but we could make it global
+            onProgress(cumulativeSent + sent, totalBytes, p.basename(f.path));
+          },
+        );
+        cumulativeSent += f.lengthSync();
+      }
+    }
+  }
+
+  Future<void> _internalSendFile({
+    required File file,
+    required String host,
+    required int port,
+    String? relativePath,
     required void Function(int sent, int total) onProgress,
   }) async {
-    final file = File(filePath);
     final length = await file.length();
-    final filename = p.basename(filePath);
+    final filename = p.basename(file.path);
 
     var attempts = 0;
     const maxAttempts = 3;
@@ -254,9 +306,11 @@ class FileTransferService {
       try {
         final request = await client.post(host, port, '/upload');
         request.headers.set('x-filename', filename);
+        if (relativePath != null) {
+          request.headers.set('x-relative-path', relativePath);
+        }
         request.headers.set('x-size', length.toString());
-        request.contentLength =
-            length; // Explicitly set length to avoid chunked encoding
+        request.contentLength = length;
 
         var sent = 0;
         // Use a larger buffer for reading
@@ -291,7 +345,7 @@ class FileTransferService {
 
   Future<Directory> _getReceiveDirectory() async {
     Directory dir;
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       final downloads = Directory('/storage/emulated/0/Download/Wire');
       if (await downloads.exists() ||
           await downloads

@@ -39,21 +39,7 @@ class _LiquidBackgroundState extends State<LiquidBackground>
         Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: isDark
-                    ? const [
-                        Color(0xFF050914),
-                        Color(0xFF0A1221),
-                        Color(0xFF111C2E),
-                      ]
-                    : const [
-                        Color(0xFFF5F7FC),
-                        Color(0xFFEEF3FF),
-                        Color(0xFFEFF7F7),
-                      ],
-              ),
+              color: isDark ? Colors.black : const Color(0xFFF5F7FC),
             ),
           ),
         ),
@@ -73,9 +59,7 @@ class _LiquidBackgroundState extends State<LiquidBackground>
         Positioned.fill(
           child: IgnorePointer(
             child: RepaintBoundary(
-              child: CustomPaint(
-                painter: GridOverlayPainter(isDark: isDark),
-              ),
+              child: CustomPaint(painter: GridOverlayPainter(isDark: isDark)),
             ),
           ),
         ),
@@ -92,7 +76,8 @@ class LiquidPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..maskFilter = const MaskFilter.blur(BlurStyle.normal, 90);
+    final paint = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 90);
 
     void drawBlob(Offset offset, double radius, Color color) {
       paint.color = color;
@@ -103,45 +88,56 @@ class LiquidPainter extends CustomPainter {
 
     drawBlob(
       Offset(
-        size.width * 0.12 + 48 * math.sin(t * 0.92),
-        size.height * 0.16 + 40 * math.cos(t * 0.82),
+        size.width * 0.12 + 48 * math.sin(t * 0.94),
+        size.height * 0.16 + 40 * math.cos(t * 0.79),
       ),
       size.width * 0.42,
-      (isDark ? const Color(0xFF5F7DFF) : const Color(0xFF9FB4FF)).withValues(
-        alpha: isDark ? 0.26 : 0.2,
+      (isDark ? Colors.white : Colors.blue).withValues(
+        alpha: isDark ? 0.03 : 0.08,
       ),
     );
 
     drawBlob(
       Offset(
-        size.width * 0.82 + 46 * math.cos(t * 0.74),
-        size.height * 0.66 + 64 * math.sin(t * 0.52),
+        size.width * 0.82 + 46 * math.cos(t * 0.71),
+        size.height * 0.66 + 64 * math.sin(t * 0.55),
       ),
       size.width * 0.5,
-      (isDark ? const Color(0xFF3AD3C0) : const Color(0xFF9CE9D9)).withValues(
-        alpha: isDark ? 0.2 : 0.16,
+      (isDark ? Colors.white : Colors.teal).withValues(
+        alpha: isDark ? 0.02 : 0.06,
       ),
     );
 
     drawBlob(
       Offset(
-        size.width * 0.48 + 34 * math.sin(t * 1.2),
-        size.height * 0.1 - 24 * math.cos(t),
+        size.width * 0.48 + 34 * math.sin(t * 1.18),
+        size.height * 0.1 - 24 * math.cos(t * 0.97),
       ),
       size.width * 0.3,
-      (isDark ? const Color(0xFF8364FF) : const Color(0xFFC5B6FF)).withValues(
-        alpha: isDark ? 0.2 : 0.14,
+      (isDark ? Colors.white : Colors.purple).withValues(
+        alpha: isDark ? 0.02 : 0.05,
       ),
     );
 
     drawBlob(
       Offset(
-        size.width * 0.32 + 36 * math.sin(t * 0.6),
-        size.height * 0.82 + 24 * math.cos(t * 0.9),
+        size.width * 0.32 + 36 * math.sin(t * 0.62),
+        size.height * 0.82 + 24 * math.cos(t * 0.88),
       ),
       size.width * 0.24,
       (isDark ? const Color(0xFF2F98FF) : const Color(0xFFAAD0FF)).withValues(
         alpha: isDark ? 0.18 : 0.13,
+      ),
+    );
+
+    drawBlob(
+      Offset(
+        size.width * 0.70 + 28 * math.cos(t * 0.78),
+        size.height * 0.22 + 36 * math.sin(t * 1.05),
+      ),
+      size.width * 0.20,
+      (isDark ? const Color(0xFFF59E0B) : const Color(0xFFFFD580)).withValues(
+        alpha: isDark ? 0.08 : 0.07,
       ),
     );
 
@@ -158,7 +154,9 @@ class LiquidPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant LiquidPainter oldDelegate) => true;
+  bool shouldRepaint(covariant LiquidPainter oldDelegate) =>
+      oldDelegate.animationValue != animationValue ||
+      oldDelegate.isDark != isDark;
 }
 
 class GridOverlayPainter extends CustomPainter {

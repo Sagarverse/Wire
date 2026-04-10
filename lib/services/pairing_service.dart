@@ -30,6 +30,7 @@ class PairedDevice {
         'ip': lastIp,
         'trusted': isTrusted,
         'os': osType,
+        'seen': lastSeenAt,
         'battery': batteryLevel,
         'charging': isCharging,
         'filePort': filePort,
@@ -78,7 +79,7 @@ class PairingService {
   String? _activeDeviceId;
 
   List<PairedDevice> get devices => List.unmodifiable(_devices);
-  
+
   PairedDevice? get activeDevice {
     if (_activeDeviceId == null) return null;
     try {
@@ -91,7 +92,7 @@ class PairingService {
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonList = prefs.getStringList(_key) ?? [];
-    
+
     _devices = jsonList.map((str) {
       try {
         return PairedDevice.fromJson(jsonDecode(str));
@@ -120,7 +121,7 @@ class PairingService {
       // Keep existing trust level unless explicitly updated
       final existing = _devices[idx];
       _devices[idx] = device.copyWith(
-        isTrusted: device.isTrusted || existing.isTrusted, 
+        isTrusted: device.isTrusted || existing.isTrusted,
       );
     } else {
       _devices.add(device);

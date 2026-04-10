@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
@@ -22,7 +23,7 @@ class TrayService {
     required void Function() onDisconnect,
     required void Function() onQuit,
   }) async {
-    if (!Platform.isMacOS) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) {
       return;
     }
     if (_initialized) {
@@ -72,7 +73,7 @@ class TrayService {
     required void Function() onDisconnect,
     required void Function() onQuit,
   }) async {
-    if (!Platform.isMacOS) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) {
       return;
     }
     _menu = Menu();

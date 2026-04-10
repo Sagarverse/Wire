@@ -12,10 +12,10 @@ class StaggeredAnimatedItem extends StatefulWidget {
     super.key,
     required this.child,
     required this.index,
-    this.delay = 50,
-    this.duration = const Duration(milliseconds: 400),
-    this.curve = Curves.easeOutCubic,
-    this.slideOffset = 20.0,
+    this.delay = 45,
+    this.duration = const Duration(milliseconds: 450),
+    this.curve = Curves.easeOutQuart,
+    this.slideOffset = 14.0,
   });
 
   @override
@@ -35,7 +35,7 @@ class _StaggeredAnimatedItemState extends State<StaggeredAnimatedItem>
       vsync: this,
       duration: widget.duration,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
@@ -95,10 +95,10 @@ class StaggeredList extends StatelessWidget {
   const StaggeredList({
     super.key,
     required this.children,
-    this.delay = 50,
-    this.duration = const Duration(milliseconds: 400),
-    this.curve = Curves.easeOutCubic,
-    this.slideOffset = 20.0,
+    this.delay = 45,
+    this.duration = const Duration(milliseconds: 450),
+    this.curve = Curves.easeOutQuart,
+    this.slideOffset = 14.0,
   });
 
   @override

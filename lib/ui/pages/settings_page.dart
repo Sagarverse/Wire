@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:provider/provider.dart';
 import '../widgets/glass_card.dart';
 import '../../widgets/liquid_background.dart';
@@ -17,11 +18,7 @@ class SettingsPage extends StatelessWidget {
   final VoidCallback onResetApp;
   final EdgeInsets? padding;
 
-  const SettingsPage({
-    super.key,
-    required this.onResetApp,
-    this.padding,
-  });
+  const SettingsPage({super.key, required this.onResetApp, this.padding});
 
   @override
   Widget build(BuildContext context) {
@@ -53,13 +50,31 @@ class SettingsPage extends StatelessWidget {
                     ),
                     _buildSection(
                       context,
+                      title: 'My Profile',
+                      icon: Icons.account_circle_rounded,
+                      children: [
+                        _buildProfileTile(context, appState),
+                        _buildActionTile(
+                          context,
+                          title: 'Device Identity',
+                          subtitle: 'Current Name: ${appState.deviceName}',
+                          icon: Icons.edit_note_rounded,
+                          onTap: () => _showDeviceRenameDialog(context, appState),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    _buildSection(
+                      context,
                       title: 'Pairing & Devices',
                       icon: Icons.phonelink_setup_rounded,
                       children: [
                         _buildActionTile(
                           context,
                           title: 'Manage Linked Devices',
-                          subtitle: appState.pairingService.activeDevice != null ? 'Connected to ${appState.pairingService.activeDevice!.name}' : 'No active device linked',
+                          subtitle: appState.pairingService.activeDevice != null
+                              ? 'Connected to ${appState.pairingService.activeDevice!.name}'
+                              : 'No active device linked',
                           icon: Icons.devices_other_rounded,
                           onTap: () {
                             Navigator.of(context).push(
@@ -68,8 +83,16 @@ class SettingsPage extends StatelessWidget {
                                   pairingService: appState.pairingService,
                                   discoveredPeers: appState.discoveredPeers,
                                   localDeviceId: appState.deviceId,
-                                  onMakeActive: (device) => appState.connectToPeer(device.lastIp, targetId: device.deviceId),
-                                  onConnectToPeer: (peer) => appState.connectToPeer(peer.address.address, targetId: peer.deviceId),
+                                  onMakeActive: (device) =>
+                                      appState.connectToPeer(
+                                        device.lastIp,
+                                        targetId: device.deviceId,
+                                      ),
+                                  onConnectToPeer: (peer) =>
+                                      appState.connectToPeer(
+                                        peer.address,
+                                        targetId: peer.deviceId,
+                                      ),
                                 ),
                               ),
                             );
@@ -85,7 +108,9 @@ class SettingsPage extends StatelessWidget {
                               context: context,
                               builder: (_) => QrPairingDialog(
                                 deviceId: appState.deviceId,
-                                deviceName: Platform.isMacOS ? 'Wire Mac' : 'Wire Device',
+                                deviceName: (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS)
+                                    ? 'Wire Mac'
+                                    : 'Wire Device',
                                 port: 5757,
                               ),
                             );
@@ -100,9 +125,7 @@ class SettingsPage extends StatelessWidget {
                       context,
                       title: 'Appearance',
                       icon: Icons.palette_rounded,
-                      children: [
-                        _buildThemeSwitcher(context),
-                      ],
+                      children: [_buildThemeSwitcher(context)],
                     ),
 
                     const SizedBox(height: 24),
@@ -116,7 +139,8 @@ class SettingsPage extends StatelessWidget {
                           title: 'Auto-Connect',
                           subtitle: 'Pair with last device on startup',
                           value: appState.autoConnectEnabled,
-                          onChanged: (v) => appState.toggleSetting('auto_connect', v),
+                          onChanged: (v) =>
+                              appState.toggleSetting('auto_connect', v),
                           icon: Icons.bolt_rounded,
                         ),
                         _buildToggleTile(
@@ -124,7 +148,8 @@ class SettingsPage extends StatelessWidget {
                           title: 'Discovery',
                           subtitle: 'Visible to other Wire devices',
                           value: appState.discoveryEnabled,
-                          onChanged: (v) => appState.toggleSetting('discovery_enabled', v),
+                          onChanged: (v) =>
+                              appState.toggleSetting('discovery_enabled', v),
                           icon: Icons.visibility_rounded,
                         ),
                       ],
@@ -141,7 +166,8 @@ class SettingsPage extends StatelessWidget {
                           title: 'Clipboard',
                           subtitle: 'Sync text across devices',
                           value: !appState.isSyncPaused,
-                          onChanged: (v) => appState.toggleSetting('sync_paused', !v),
+                          onChanged: (v) =>
+                              appState.toggleSetting('sync_paused', !v),
                           icon: Icons.content_paste_go_rounded,
                         ),
                         _buildToggleTile(
@@ -149,7 +175,10 @@ class SettingsPage extends StatelessWidget {
                           title: 'Notifications',
                           subtitle: 'Forward mobile alerts to desktop',
                           value: appState.notificationSyncEnabled,
-                          onChanged: (v) => appState.toggleSetting('notification_sync_enabled', v),
+                          onChanged: (v) => appState.toggleSetting(
+                            'notification_sync_enabled',
+                            v,
+                          ),
                           icon: Icons.notifications_active_rounded,
                         ),
                         _buildToggleTile(
@@ -157,7 +186,8 @@ class SettingsPage extends StatelessWidget {
                           title: 'Silent Mode',
                           subtitle: 'No popups for clipboard sync',
                           value: appState.silentClipboard,
-                          onChanged: (v) => appState.toggleSetting('silent_clipboard', v),
+                          onChanged: (v) =>
+                              appState.toggleSetting('silent_clipboard', v),
                           icon: Icons.notifications_paused_rounded,
                         ),
                       ],
@@ -172,10 +202,13 @@ class SettingsPage extends StatelessWidget {
                         _buildActionTile(
                           context,
                           title: 'Downloads Root',
-                          subtitle: appState.downloadsPath ?? 'Default (~/Downloads/Wire)',
+                          subtitle:
+                              appState.downloadsPath ??
+                              'Default (~/Downloads/Wire)',
                           icon: Icons.folder_special_rounded,
                           onTap: () async {
-                            String? result = await FilePicker.platform.getDirectoryPath();
+                            String? result = await FilePicker.platform
+                                .getDirectoryPath();
                             if (result != null) {
                               appState.updateDownloadsPath(result);
                             }
@@ -189,22 +222,17 @@ class SettingsPage extends StatelessWidget {
                       context,
                       title: 'Experimental Labs',
                       icon: Icons.science_rounded,
-                      accent: Colors.amber,
+                      accent: scheme.onSurface.withValues(alpha: 0.6),
                       children: [
-                        _buildToggleTile(
-                          context,
-                          title: 'Mirroring',
-                          subtitle: 'Screen & input relay (Beta)',
-                          value: appState.labsMirrorFeaturesEnabled,
-                          onChanged: (v) => appState.toggleSetting('labs_mirror_features_enabled', v),
-                          icon: Icons.cast_connected_rounded,
-                        ),
                         _buildToggleTile(
                           context,
                           title: 'Finder Mount',
                           subtitle: 'Mount phone storage in macOS Finder',
                           value: appState.labsMountFinderEnabled,
-                          onChanged: (v) => appState.toggleSetting('labs_mount_finder_enabled', v),
+                          onChanged: (v) => appState.toggleSetting(
+                            'labs_mount_finder_enabled',
+                            v,
+                          ),
                           icon: Icons.usb_rounded,
                         ),
                       ],
@@ -269,14 +297,19 @@ class SettingsPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              Icon(icon, size: 16, color: (accent ?? scheme.primary).withValues(alpha: 0.7)),
+              Icon(
+                icon,
+                size: 16,
+                color: (accent ?? scheme.primary).withValues(alpha: 0.7),
+              ),
               const SizedBox(width: 8),
               Text(
                 title.toUpperCase(),
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
-                  color: (accent ?? scheme.primary).withValues(alpha: 0.7),
+                  color: (accent ?? scheme.onSurface)
+                      .withValues(alpha: 0.7),
                   letterSpacing: 1.5,
                 ),
               ),
@@ -304,17 +337,32 @@ class SettingsPage extends StatelessWidget {
     return SwitchListTile(
       value: value,
       onChanged: onChanged,
-      activeThumbColor: scheme.primary,
+      activeThumbColor: scheme.onSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-      subtitle: Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13)),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          color: scheme.onSurface.withValues(alpha: 0.5),
+          fontSize: 13,
+        ),
+      ),
       secondary: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: (value ? scheme.primary : scheme.onSurface).withValues(alpha: 0.1),
+          color: (value ? scheme.primary : scheme.onSurface).withValues(
+            alpha: 0.1,
+          ),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon, color: value ? scheme.primary : scheme.onSurface.withValues(alpha: 0.4), size: 22),
+        child: Icon(
+          icon,
+          color: value ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.4),
+          size: 22,
+        ),
       ),
     );
   }
@@ -332,8 +380,21 @@ class SettingsPage extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
-      subtitle: Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13)),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+          color: color,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          color: scheme.onSurface.withValues(alpha: 0.5),
+          fontSize: 13,
+        ),
+      ),
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -342,7 +403,11 @@ class SettingsPage extends StatelessWidget {
         ),
         child: Icon(icon, color: color, size: 22),
       ),
-      trailing: Icon(Icons.chevron_right_rounded, size: 20, color: scheme.onSurface.withValues(alpha: 0.2)),
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        size: 20,
+        color: scheme.onSurface.withValues(alpha: 0.2),
+      ),
     );
   }
 
@@ -364,14 +429,26 @@ class SettingsPage extends StatelessWidget {
               onSelectionChanged: (val) => AppTheme.setThemeMode(val.first),
               style: SegmentedButton.styleFrom(
                 backgroundColor: Colors.transparent,
-                selectedBackgroundColor: scheme.primary,
-                selectedForegroundColor: scheme.onPrimary,
+                selectedBackgroundColor: scheme.onSurface,
+                selectedForegroundColor: scheme.surface,
                 side: BorderSide.none,
               ),
               segments: const [
-                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded), label: Text('Light')),
-                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded), label: Text('Dark')),
-                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.auto_mode_rounded), label: Text('Auto')),
+                ButtonSegment(
+                  value: ThemeMode.light,
+                  icon: Icon(Icons.light_mode_rounded),
+                  label: Text('Light'),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.dark,
+                  icon: Icon(Icons.dark_mode_rounded),
+                  label: Text('Dark'),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.system,
+                  icon: Icon(Icons.auto_mode_rounded),
+                  label: Text('Auto'),
+                ),
               ],
             ),
           ),
@@ -386,7 +463,8 @@ class SettingsPage extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 90, height: 90,
+            width: 90,
+            height: 90,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [scheme.primary, scheme.tertiary],
@@ -402,16 +480,37 @@ class SettingsPage extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(Icons.bolt_rounded, size: 50, color: Colors.white),
+            child: const Icon(
+              Icons.bolt_rounded,
+              size: 50,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 24),
           const Text(
             'Wire Sync',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, letterSpacing: -0.5),
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 24,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Local-first device continuity',
+            style: TextStyle(
+              fontSize: 12,
+              color: scheme.onSurface.withValues(alpha: 0.45),
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Text(
-            'Version 3.0.0 • Pro Edition',
-            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.4), fontSize: 14, fontWeight: FontWeight.w600),
+            'v1.0.0 · Production',
+            style: TextStyle(
+              color: scheme.onSurface.withValues(alpha: 0.4),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 40),
           Row(
@@ -426,8 +525,12 @@ class SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 60),
           Text(
-            'Handcrafted by Antigravity in 2026',
-            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.3), fontSize: 12, fontWeight: FontWeight.w500),
+            'Crafted with care · Local-first · Private',
+            style: TextStyle(
+              color: scheme.onSurface.withValues(alpha: 0.3),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -463,7 +566,11 @@ class SettingsPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              Icon(Icons.security_rounded, size: 16, color: scheme.primary.withValues(alpha: 0.7)),
+              Icon(
+                Icons.security_rounded,
+                size: 16,
+                color: scheme.primary.withValues(alpha: 0.7),
+              ),
               const SizedBox(width: 8),
               Text(
                 'SYSTEM PERMISSIONS',
@@ -548,29 +655,138 @@ class SettingsPage extends StatelessWidget {
       builder: (context, snapshot) {
         final isGranted = snapshot.data == true;
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          subtitle: Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 8,
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: TextStyle(
+              color: scheme.onSurface.withValues(alpha: 0.5),
+              fontSize: 13,
+            ),
+          ),
           leading: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: (isGranted ? Colors.green : scheme.onSurface).withValues(alpha: 0.1),
+              color: (isGranted ? Colors.green : scheme.onSurface).withValues(
+                alpha: 0.1,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              isGranted ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
-              color: isGranted ? Colors.green : scheme.onSurface.withValues(alpha: 0.4),
+              isGranted
+                  ? Icons.check_circle_rounded
+                  : Icons.warning_amber_rounded,
+              color: isGranted
+                  ? Colors.green
+                  : scheme.onSurface.withValues(alpha: 0.4),
               size: 22,
             ),
           ),
           trailing: isGranted
               ? null
-              : TextButton(
-                  onPressed: onGrant,
-                  child: const Text('GRANT'),
-                ),
+              : TextButton(onPressed: onGrant, child: const Text('GRANT')),
         );
       },
+    );
+  }
+
+  Widget _buildProfileTile(BuildContext context, AppState appState) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      onTap: () => _showProfileEditDialog(context, appState),
+      leading: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(colors: [scheme.primary, scheme.tertiary]),
+          image: appState.userAvatar != null ? DecorationImage(image: NetworkImage(appState.userAvatar!)) : null,
+        ),
+        child: appState.userAvatar == null ? Icon(Icons.person_rounded, color: scheme.onPrimary) : null,
+      ),
+      title: Text(
+        appState.userName,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+      ),
+      subtitle: Text(
+        'Tap to edit name or avatar',
+        style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5), fontSize: 13),
+      ),
+      trailing: Icon(Icons.chevron_right_rounded, color: scheme.onSurface.withValues(alpha: 0.2)),
+    );
+  }
+
+  void _showProfileEditDialog(BuildContext context, AppState appState) {
+    final nameController = TextEditingController(text: appState.userName);
+    final avatarController = TextEditingController(text: appState.userAvatar ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        title: const Text('Edit Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Display Name', hintText: 'Enter your name'),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: avatarController,
+              decoration: const InputDecoration(labelText: 'Avatar URL', hintText: 'https://...'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () {
+              appState.updateProfile(name: nameController.text, avatar: avatarController.text.isEmpty ? null : avatarController.text);
+              Navigator.pop(context);
+            },
+            child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeviceRenameDialog(BuildContext context, AppState appState) {
+    final controller = TextEditingController(text: appState.deviceName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        title: const Text('Rename Local Device'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Device Name'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () {
+              appState.renameLocalDevice(controller.text);
+              Navigator.pop(context);
+            },
+            child: const Text('RENAME', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 

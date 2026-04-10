@@ -1,15 +1,16 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:provider/provider.dart';
 import '../../services/app_identity.dart';
 import '../../services/permissions_service.dart';
 import '../../services/discovery_service.dart';
-import '../../services/pairing_service.dart';
 import '../../providers/app_state.dart';
 import '../widgets/glass_card.dart';
 import '../../widgets/liquid_background.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../widgets/manual_pair_dialog.dart';
+import 'dart:convert';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import '../widgets/qr_pairing_dialog.dart';
 
 class OnboardingPage extends StatefulWidget {
   final VoidCallback onFinish;
@@ -28,28 +29,27 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final TextEditingController _nameController = TextEditingController();
   final AppIdentity _identity = AppIdentity();
   final PermissionsService _permissions = PermissionsService();
-  
+
   int _currentPage = 0;
   bool _isNotificationsGranted = false;
   bool _isBluetoothGranted = false;
   bool _isStorageGranted = false;
   bool _isSmsGranted = false;
   bool _isContactsGranted = false;
-  
-  final List<DiscoveryPeerInfo> _discoveredPeers = [];
+
+  final MobileScannerController _qrScanController = MobileScannerController();
   late AppState _appState;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startDiscovery();
       _checkPermissions();
     });
   }
 
   Future<void> _checkPermissions() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     final b = await _permissions.checkPermissionStatus(Permission.bluetoothScan);
     final n = await _permissions.checkPermissionStatus(Permission.notification);
     final s = await _permissions.checkPermissionStatus(Permission.storage);
@@ -72,30 +72,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _appState = context.read<AppState>();
   }
 
-  Future<void> _startDiscovery() async {
-    final deviceId = _appState.deviceId;
-    final name = _appState.deviceName;
-    
-    await _appState.discoveryService.start(
-      deviceId: deviceId,
-      deviceName: name,
-      wsPort: 5757, 
-      filePort: 5758,
-      onPeerFound: (info) {
-        if (mounted) {
-           setState(() {
-             if (!_discoveredPeers.any((p) => p.deviceId == info.deviceId)) {
-               _discoveredPeers.add(info);
-             }
-           });
-        }
-      },
-    );
-  }
+
 
   @override
   void dispose() {
-    _appState.discoveryService.stop();
+    _qrScanController.dispose();
     _pageController.dispose();
     _nameController.dispose();
     super.dispose();
@@ -140,7 +121,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 _buildStep5(scheme),
               ],
             ),
-            
+
             // Navigation overlays
             Positioned(
               bottom: 40,
@@ -153,7 +134,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   Row(
                     children: List.generate(6, (index) => _buildIndicator(index, scheme)),
                   ),
-                  
+
                   // Next Button
                   ElevatedButton(
                     onPressed: _nextPage,
@@ -167,7 +148,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(_currentPage == 5 ? 'GET STARTED' : 'CONTINUE', 
+                        Text(_currentPage == 5 ? 'GET STARTED' : 'CONTINUE',
                           style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                         const SizedBox(width: 8),
                         const Icon(Icons.arrow_forward_rounded, size: 18),
@@ -177,7 +158,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 ],
               ),
             ),
-            
+
             // Skip button
             if (_currentPage < 5)
               Positioned(
@@ -225,7 +206,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           ),
           const SizedBox(height: 40),
           Text(
-            'Welcome to Wire 2.0',
+            'Welcome to Wire',
             style: TextStyle(
               fontSize: 34,
               fontWeight: FontWeight.bold,
@@ -236,7 +217,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Meld your devices into one synchronized ecosystem. Purely local, purely secure.',
+            'Your devices, unified. Local-first, instant sync, zero cloud.',
             style: TextStyle(
               fontSize: 16,
               color: scheme.onSurface.withValues(alpha: 0.6),
@@ -261,10 +242,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
             style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: scheme.onSurface),
           ),
           const SizedBox(height: 30),
-          _buildFeatureRow(Icons.content_copy_rounded, 'Universal Clipboard', 'Sync clipboard across your devices.', scheme),
+          _buildFeatureRow(Icons.content_copy_rounded, 'Universal Clipboard', 'Sync text instantly across devices.', scheme),
           _buildFeatureRow(Icons.dock_rounded, 'Liquid Glass Dock', 'Premium, haptic-enabled floating navigation.', scheme),
-          _buildFeatureRow(Icons.cast_connected_rounded, 'Screen Mirroring', 'Low-latency local network streaming.', scheme),
-          _buildFeatureRow(Icons.folder_shared_rounded, 'Desktop Drop', 'Native file management and transfer.', scheme),
+          _buildFeatureRow(Icons.folder_shared_rounded, 'File Sharing', 'Send files between devices instantly.', scheme),
+          _buildFeatureRow(Icons.folder_shared_rounded, 'Remote Files', 'Browse and download from any linked device.', scheme),
+          _buildFeatureRow(Icons.ring_volume_rounded, 'Find My Device', 'Ring at max volume to locate a lost device.', scheme),
         ],
       ),
     );
@@ -323,7 +305,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             child: TextField(
               controller: _nameController,
               decoration: InputDecoration(
-                hintText: Platform.isMacOS ? 'e.g. My MacBook' : 'e.g. Pixel 8',
+                hintText: (kIsWeb ? false : defaultTargetPlatform == TargetPlatform.macOS) ? 'e.g. My MacBook' : 'e.g. Pixel 8',
                 border: InputBorder.none,
                 icon: Icon(Icons.alternate_email_rounded, color: scheme.primary, size: 20),
               ),
@@ -351,7 +333,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: scheme.onSurface),
           ),
           const SizedBox(height: 12),
-          Text('Wire needs access to work seamlessly.', 
+          Text('Wire needs access to work seamlessly.',
             style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5)),
             textAlign: TextAlign.center),
           const SizedBox(height: 40),
@@ -417,88 +399,115 @@ class _OnboardingPageState extends State<OnboardingPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('DISCOVER DEVICES', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold, fontSize: 11)),
+          const Text('PAIR YOUR DEVICE', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold, fontSize: 11)),
           const SizedBox(height: 24),
           const Text(
-            'Link Your Device',
+            'Link by QR Code',
             style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
           Text(
-            'Ensure Wire is open on your other devices to pair them.',
+            'Show your QR code or scan the other device\'s code to pair instantly.',
             style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5)),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 40),
-          Expanded(
-            child: _discoveredPeers.isEmpty
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 20),
-                      Text('Searching for devices...', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.4))),
-                      const SizedBox(height: 32),
-                      OutlinedButton.icon(
-                        onPressed: () => _showManualPair(context),
-                        icon: const Icon(Icons.lan_rounded, size: 18),
-                        label: const Text('MANUAL IP ENTRY'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: scheme.primary,
-                          side: BorderSide(color: scheme.primary.withValues(alpha: 0.3)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ],
-                  )
-                : ListView.builder(
-                    itemCount: _discoveredPeers.length,
-                    itemBuilder: (context, index) {
-                      final p = _discoveredPeers[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: GlassCard(
-                          borderRadius: BorderRadius.circular(16),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text('Device ${p.deviceId.substring(0, 4)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(p.address.address, style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.5))),
-                            trailing: ElevatedButton(
-                              onPressed: () => _pairDevice(p),
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: scheme.primary,
-                                  foregroundColor: scheme.onPrimary,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  elevation: 0),
-                              child: const Text('PAIR'),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+          // Show My QR Code
+          GlassCardInteractive(
+            onTap: () => showDialog(
+              context: context,
+              builder: (_) => QrPairingDialog(
+                deviceId: _appState.deviceId,
+                deviceName: _appState.deviceName,
+                port: 5757,
+              ),
+            ),
+            padding: const EdgeInsets.all(20),
+            borderRadius: BorderRadius.circular(20),
+            accent: scheme.primary,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  child: Icon(Icons.qr_code_2_rounded, color: scheme.primary, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Show My QR Code',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                      const SizedBox(height: 2),
+                      Text('Let the other device scan this',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurface.withValues(alpha: 0.5))),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded,
+                    color: scheme.onSurface.withValues(alpha: 0.3)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Scan QR Code
+          GlassCardInteractive(
+            onTap: _openQrScanner,
+            padding: const EdgeInsets.all(20),
+            borderRadius: BorderRadius.circular(20),
+            accent: scheme.secondary,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.secondary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(Icons.qr_code_scanner_rounded, color: scheme.secondary, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Scan QR Code',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                      const SizedBox(height: 2),
+                      Text("Point at the other device's QR code",
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurface.withValues(alpha: 0.5))),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded,
+                    color: scheme.onSurface.withValues(alpha: 0.3)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          TextButton(
+            onPressed: _nextPage,
+            child: Text(
+              'Skip for now',
+              style: TextStyle(
+                  color: scheme.onSurface.withValues(alpha: 0.4), fontSize: 13),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _pairDevice(DiscoveryPeerInfo peer) async {
-    final appState = context.read<AppState>();
-    final device = PairedDevice(
-      deviceId: peer.deviceId,
-      name: 'Remote Device',
-      lastIp: peer.address.address,
-      isTrusted: true,
-      osType: 'unknown',
-      lastSeenAt: DateTime.now().millisecondsSinceEpoch,
-    );
-    await appState.pairingService.addOrUpdateDevice(device);
-    await appState.pairingService.setActiveDevice(device.deviceId);
-    _nextPage();
-  }
+
 
   Widget _buildStep5(ColorScheme scheme) {
     return Padding(
@@ -523,14 +532,38 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ),
     );
   }
-  void _showManualPair(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => ManualPairDialog(
-        onPair: (peer) {
-          _appState.reconnect(); // Trigger connection to the manual peer
-          widget.onFinish(); // Mark onboarding as complete and transition
-        },
+  void _openQrScanner() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('Scan Pairing Code')),
+          body: MobileScanner(
+            controller: _qrScanController,
+            onDetect: (capture) {
+              for (final barcode in capture.barcodes) {
+                if (barcode.rawValue != null) {
+                  try {
+                    final data = jsonDecode(barcode.rawValue!);
+                    final peer = DiscoveryPeerInfo(
+                      address: data['ip'],
+                      deviceId: data['id'],
+                      deviceName: data['name'],
+                      wsPort: data['port'],
+                      filePort: data['filePort'] ?? 5758,
+                    );
+                    _appState.connectToPeer(
+                      peer.address,
+                      targetId: peer.deviceId,
+                    );
+                    Navigator.pop(context);
+                    _nextPage();
+                    return;
+                  } catch (_) {}
+                }
+              }
+            },
+          ),
+        ),
       ),
     );
   }

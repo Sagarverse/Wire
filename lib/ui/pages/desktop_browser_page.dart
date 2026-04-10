@@ -41,7 +41,7 @@ class _DesktopBrowserPageState extends State<DesktopBrowserPage> {
     try {
       final result = await appState.fileTransferService.browseRemote(
         host: activeDevice.lastIp,
-        port: 5758,
+        port: activeDevice.filePort,
         path: path,
       );
 
@@ -134,7 +134,7 @@ class _DesktopBrowserPageState extends State<DesktopBrowserPage> {
 
   Widget _buildBreadcrumbs(ColorScheme scheme) {
     final parts = _currentPath.split(Platform.pathSeparator).where((s) => s.isNotEmpty).toList();
-    
+
     return Container(
       height: 40,
       margin: const EdgeInsets.only(bottom: 8),

@@ -50,7 +50,7 @@ class ClipboardService {
     if (text == _lastLocalText || text == _lastRemoteText) return;
     // Avoid re-emitting text that was just set from remote
     if (_lastRemoteAt != null &&
-        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 500) {
+        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 1200) {
       return;
     }
     _lastLocalText = text;
@@ -93,7 +93,7 @@ class ClipboardService {
     if (text.isEmpty) return true;
     if (text == _lastLocalText || text == _lastRemoteText) return true;
     if (_lastRemoteAt != null &&
-        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 500) {
+        DateTime.now().difference(_lastRemoteAt!).inMilliseconds < 1200) {
       return true;
     }
     return false;
