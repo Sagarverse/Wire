@@ -14,6 +14,7 @@ import '../widgets/p2p_connection_dialog.dart';
 import '../widgets/file_preview_overlay.dart';
 import 'package:open_file/open_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import '../widgets/pairing_request_sheet.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -40,6 +41,51 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (!mounted) return;
         _showFilePreview(context, appState, progress.name, progress.path, progress.total);
       });
+
+      // Listen for pairing requests
+      appState.addListener(_handleAppStateChanges);
+    });
+  }
+
+  void _handleAppStateChanges() {
+    if (!mounted) return;
+    final app = context.read<AppState>();
+    if (app.pendingPairing != null) {
+      _showPairingRequest(app);
+    }
+  }
+
+  bool _pairingSheetOpen = false;
+  void _showPairingRequest(AppState appState) {
+    if (_pairingSheetOpen) return;
+    _pairingSheetOpen = true;
+    
+    final req = appState.pendingPairing;
+    if (req == null) {
+      _pairingSheetOpen = false;
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (context) => PairingRequestSheet(
+        deviceName: req.name,
+        deviceIp: req.ip,
+        deviceOs: req.os,
+        onAccept: () {
+          appState.allowPairing();
+          Navigator.pop(context);
+        },
+        onReject: () {
+          appState.denyPairing();
+          Navigator.pop(context);
+        },
+      ),
+    ).whenComplete(() {
+      _pairingSheetOpen = false;
     });
   }
 
@@ -163,6 +209,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             index: 0,
                             child: _StatusHub(
                               status: appState.lastStatus,
+                              connectionType: appState.connectionType,
                               pulseController: _pulseController,
                               onTap: () => appState.reconnect(),
                             ),
@@ -185,7 +232,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   builder: (_) => const P2PConnectionDialog());
                             },
                             child: GlassCard(
-                              accent: scheme.onSurface,
+                              accent: scheme.primary,
                               borderRadius: BorderRadius.circular(24),
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 20, vertical: 16),
@@ -194,12 +241,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   Container(
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: scheme.onSurface
-                                          .withValues(alpha: 0.1),
+                                      color: scheme.primary.withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
-                                    child: Icon(Icons.public_rounded,
-                                        color: scheme.onSurface, size: 20),
+                                    child: Icon(Icons.auto_awesome_rounded,
+                                        color: scheme.primary, size: 20),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(
@@ -208,13 +254,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                           CrossAxisAlignment.start,
                                       children: [
                                         const Text(
-                                          'P2P Anywhere',
+                                          'Smart Sync',
                                           style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 15),
                                         ),
                                         Text(
-                                          'Share over internet using WebRTC',
+                                          'Automatic Local & Internet switching',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: scheme.onSurface
@@ -224,9 +270,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                       ],
                                     ),
                                   ),
-                                  Icon(Icons.chevron_right_rounded,
-                                      color: scheme.onSurface
-                                          .withValues(alpha: 0.5)),
+                                  Switch(
+                                    value: appState.connectionMode == ConnectionMode.auto,
+                                    onChanged: (val) {
+                                       appState.setConnectionMode(val ? ConnectionMode.auto : ConnectionMode.local);
+                                    },
+                                  ),
                                 ],
                               ),
                             ),
@@ -371,7 +420,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 child: ListView.separated(
                                   scrollDirection: Axis.horizontal,
                                   itemCount: appState.recentTransfers.length,
-                                  separatorBuilder: (_, __) =>
+                                  separatorBuilder: (_, ___) =>
                                       const SizedBox(width: 12),
                                   itemBuilder: (context, index) {
                                     final item =
@@ -496,11 +545,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
 class _StatusHub extends StatelessWidget {
   final ConnectionStatus status;
+  final String connectionType;
   final AnimationController pulseController;
   final VoidCallback onTap;
 
   const _StatusHub({
     required this.status,
+    required this.connectionType,
     required this.pulseController,
     required this.onTap,
   });
@@ -553,7 +604,7 @@ class _StatusHub extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  isConnected ? 'CONNECTED' : (status == ConnectionStatus.connecting ? 'CONNECTING' : 'READY'),
+                  isConnected ? connectionType.toUpperCase() : (status == ConnectionStatus.connecting ? 'CONNECTING' : 'READY'),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
@@ -635,8 +686,6 @@ class _ConnectionModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isP2P = mode == ConnectionMode.p2p;
-
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -645,8 +694,9 @@ class _ConnectionModeToggle extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _buildToggleItem(context, 'Local WiFi', !isP2P, () => onChanged(ConnectionMode.local)),
-          _buildToggleItem(context, 'P2P Anywhere', isP2P, () => onChanged(ConnectionMode.p2p)),
+          _buildToggleItem(context, 'Local', mode == ConnectionMode.local, () => onChanged(ConnectionMode.local)),
+          _buildToggleItem(context, 'P2P', mode == ConnectionMode.p2p, () => onChanged(ConnectionMode.p2p)),
+          _buildToggleItem(context, 'Auto', mode == ConnectionMode.auto, () => onChanged(ConnectionMode.auto)),
         ],
       ),
     );

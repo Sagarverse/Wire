@@ -5,11 +5,14 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   battery_plus
   desktop_drop
+  desktop_multi_window
   flutter_webrtc
   irondash_engine_context
   permission_handler_windows
+  screen_retriever_windows
   super_native_extensions
   system_tray
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

@@ -64,7 +64,12 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
                icon: const Icon(Icons.qr_code_scanner_rounded),
                onPressed: () => _openScanner(context),
                tooltip: 'Scan QR Code',
-             )
+             ),
+           IconButton(
+             icon: const Icon(Icons.refresh_rounded),
+             onPressed: () => appState.refreshDiscovery(),
+             tooltip: 'Refresh Nearby Devices',
+           ),
         ],
       ),
       body: Row(
@@ -213,24 +218,57 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
             ),
             title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(ip, style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.5))),
-            trailing: FilledButton.icon(
-              onPressed: () {
-                if (isPaired) {
-                  widget.onMakeActive(item as PairedDevice);
-                } else {
-                  widget.onConnectToPeer(item as DiscoveryPeerInfo);
-                }
-              },
-              icon: Icon(isPaired ? Icons.swap_horiz_rounded : Icons.add_link_rounded, size: 16),
-              label: Text(isPaired ? 'Switch' : 'Pair'),
-              style: FilledButton.styleFrom(
-                backgroundColor: isPaired ? scheme.surfaceContainerHigh : scheme.primary,
-                foregroundColor: isPaired ? scheme.onSurface : scheme.onPrimary,
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed: () {
+                    if (isPaired) {
+                      widget.onMakeActive(item as PairedDevice);
+                    } else {
+                      widget.onConnectToPeer(item as DiscoveryPeerInfo);
+                    }
+                  },
+                  icon: Icon(isPaired ? Icons.swap_horiz_rounded : Icons.add_link_rounded, size: 16),
+                  label: Text(isPaired ? 'Switch' : 'Pair'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: isPaired ? scheme.surfaceContainerHigh : scheme.primary,
+                    foregroundColor: isPaired ? scheme.onSurface : scheme.onPrimary,
+                  ),
+                ),
+                if (isPaired) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.delete_outline_rounded, size: 20, color: scheme.error.withValues(alpha: 0.6)),
+                    onPressed: () => _showDeleteConfirm(context, appState, item as PairedDevice),
+                    tooltip: 'Remove Device',
+                  ),
+                ],
+              ],
             ),
           ),
         );
       }).toList(),
+    );
+  }
+
+  void _showDeleteConfirm(BuildContext context, AppState appState, PairedDevice device) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Device?'),
+        content: Text('Are you sure you want to remove "${device.name}"? You will need to re-pair it to connect again.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () {
+              appState.removeSavedDevice(device.deviceId);
+              Navigator.pop(ctx);
+            },
+            child: const Text('REMOVE', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 

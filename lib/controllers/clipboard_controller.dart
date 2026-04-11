@@ -8,12 +8,12 @@ import '../services/websocket_service.dart';
 class ClipboardController extends ChangeNotifier {
   final ClipboardService clipboardService;
   final HistoryService historyService;
-  final WebSocketService webSocketService;
+  final Function(Map<String, dynamic>) onSendMessage;
 
   ClipboardController({
     required this.clipboardService,
     required this.historyService,
-    required this.webSocketService,
+    required this.onSendMessage,
   });
 
   static const int _maxHistory = 30;
@@ -47,7 +47,7 @@ class ClipboardController extends ChangeNotifier {
     if (_history.isNotEmpty && _history.first.text == text) return;
 
     _addHistory(text, source: 'Local');
-    webSocketService.send({
+    onSendMessage({
       'type': 'clipboard',
       'text': text,
     });

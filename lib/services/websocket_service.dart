@@ -30,8 +30,10 @@ class WebSocketService {
 
   bool get isClientConnected => _clientSocket != null && _clientSocket!.readyState == WebSocket.open;
   bool get hasServerClients => _serverClients.any((s) => s.readyState == WebSocket.open);
+  bool get isConnected => isClientConnected || hasServerClients;
   String? get lastClientAddress => _lastClientAddress;
   int get actualPort => _actualPort ?? port;
+  ConnectionStatus get statusValue => _calculateCurrentStatus();
 
   ConnectionStatus _calculateCurrentStatus() {
     if (isClientConnected || hasServerClients) {

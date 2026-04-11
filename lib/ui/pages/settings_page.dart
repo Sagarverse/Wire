@@ -9,8 +9,6 @@ import '../../providers/file_transfer_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../theme/app_theme.dart';
 import 'device_pairing_page.dart';
-import '../widgets/qr_pairing_dialog.dart';
-import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import '../../services/permissions_service.dart';
 
@@ -152,6 +150,7 @@ class SettingsPage extends StatelessWidget {
                               appState.toggleSetting('discovery_enabled', v),
                           icon: Icons.visibility_rounded,
                         ),
+                        _buildConnectionModeToggle(context, appState),
                       ],
                     ),
 
@@ -213,27 +212,6 @@ class SettingsPage extends StatelessWidget {
                               appState.updateDownloadsPath(result);
                             }
                           },
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-                    _buildSection(
-                      context,
-                      title: 'Experimental Labs',
-                      icon: Icons.science_rounded,
-                      accent: scheme.onSurface.withValues(alpha: 0.6),
-                      children: [
-                        _buildToggleTile(
-                          context,
-                          title: 'Finder Mount',
-                          subtitle: 'Mount phone storage in macOS Finder',
-                          value: appState.labsMountFinderEnabled,
-                          onChanged: (v) => appState.toggleSetting(
-                            'labs_mount_finder_enabled',
-                            v,
-                          ),
-                          icon: Icons.usb_rounded,
                         ),
                       ],
                     ),
@@ -459,76 +437,120 @@ class SettingsPage extends StatelessWidget {
 
   Widget _buildAboutSection(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        children: [
-          Container(
-            width: 90,
-            height: 90,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [scheme.primary, scheme.tertiary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    return Column(
+      children: [
+        _buildSection(
+          context,
+          title: 'Developer',
+          icon: Icons.code_rounded,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.2),
+                              blurRadius: 15,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                          image: const DecorationImage(
+                            image: AssetImage('assets/developer_profile.jpg'),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Sagar M',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                color: scheme.onSurface,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Bengaluru, Karnataka 562112',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: scheme.onSurface.withValues(alpha: 0.6),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: scheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Full-Stack Developer',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  const Divider(height: 1),
+                  const SizedBox(height: 16),
+                  _buildContactRow(context, Icons.phone_rounded, '+91 9019989269'),
+                  _buildContactRow(context, Icons.email_rounded, 'sagarm.2k5@gmail.com'),
+                  _buildContactRow(context, Icons.link_rounded, 'github.com/Sagarverse'),
+                ],
               ),
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
             ),
-            child: const Icon(
-              Icons.bolt_rounded,
-              size: 50,
-              color: Colors.white,
-            ),
+          ],
+        ),
+        const SizedBox(height: 40),
+        Text(
+          'Wire Sync v1.0.0 · Production',
+          style: TextStyle(
+            color: scheme.onSurface.withValues(alpha: 0.3),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Wire Sync',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 24,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
+        ),
+        const SizedBox(height: 60),
+      ],
+    );
+  }
+
+  Widget _buildContactRow(BuildContext context, IconData icon, String text) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: scheme.onSurface.withValues(alpha: 0.4)),
+          const SizedBox(width: 12),
           Text(
-            'Local-first device continuity',
+            text,
             style: TextStyle(
-              fontSize: 12,
-              color: scheme.onSurface.withValues(alpha: 0.45),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Text(
-            'v1.0.0 · Production',
-            style: TextStyle(
-              color: scheme.onSurface.withValues(alpha: 0.4),
               fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 40),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildAboutLink(Icons.language_rounded, 'Website'),
-              const SizedBox(width: 40),
-              _buildAboutLink(Icons.help_outline_rounded, 'Manual'),
-              const SizedBox(width: 40),
-              _buildAboutLink(Icons.privacy_tip_rounded, 'Privacy'),
-            ],
-          ),
-          const SizedBox(height: 60),
-          Text(
-            'Crafted with care · Local-first · Private',
-            style: TextStyle(
-              color: scheme.onSurface.withValues(alpha: 0.3),
-              fontSize: 12,
+              color: scheme.onSurface.withValues(alpha: 0.7),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -537,21 +559,45 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAboutLink(IconData icon, String label) {
-    return Column(
-      children: [
-        Icon(icon, size: 24, color: Colors.grey.withValues(alpha: 0.6)),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.withValues(alpha: 0.6),
-            letterSpacing: 0.5,
-          ),
+  Widget _buildConnectionModeToggle(BuildContext context, AppState appState) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: scheme.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
         ),
-      ],
+        child: SegmentedButton<ConnectionMode>(
+          showSelectedIcon: false,
+          selected: {appState.connectionMode},
+          onSelectionChanged: (val) => appState.setConnectionMode(val.first),
+          style: SegmentedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            selectedBackgroundColor: scheme.onSurface,
+            selectedForegroundColor: scheme.surface,
+            side: BorderSide.none,
+          ),
+          segments: const [
+            ButtonSegment(
+              value: ConnectionMode.local,
+              icon: Icon(Icons.wifi_rounded, size: 16),
+              label: Text('Local', style: TextStyle(fontSize: 11)),
+            ),
+            ButtonSegment(
+              value: ConnectionMode.p2p,
+              icon: Icon(Icons.public_rounded, size: 16),
+              label: Text('Internet', style: TextStyle(fontSize: 11)),
+            ),
+            ButtonSegment(
+              value: ConnectionMode.auto,
+              icon: Icon(Icons.auto_awesome_rounded, size: 16),
+              label: Text('Smart', style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

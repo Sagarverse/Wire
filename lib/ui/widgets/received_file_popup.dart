@@ -11,11 +11,13 @@ import 'glass_card.dart';
 class ReceivedFilePopup extends StatefulWidget {
   final FileReceiveProgress progress;
   final VoidCallback onDismiss;
+  final bool isStandalone;
 
   const ReceivedFilePopup({
     super.key,
     required this.progress,
     required this.onDismiss,
+    this.isStandalone = false,
   });
 
   @override
@@ -97,7 +99,7 @@ class _ReceivedFilePopupState extends State<ReceivedFilePopup>
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: Container(
-          margin: const EdgeInsets.all(24),
+          margin: widget.isStandalone ? EdgeInsets.zero : const EdgeInsets.all(24),
           child: GlassCard(
             accent: scheme.onSurface,
             borderRadius: BorderRadius.circular(24),

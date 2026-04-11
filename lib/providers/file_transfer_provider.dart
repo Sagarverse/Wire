@@ -93,6 +93,7 @@ class FileTransferProvider extends ChangeNotifier {
 
   void clearHistory() {
     _transfers.removeWhere((t) => t.status == 'complete' || t.status == 'failed');
+    _historyService.clearTransferHistory();
     notifyListeners();
   }
 

@@ -11,6 +11,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:window_manager/window_manager.dart';
 
 
 import 'models/transfer_item.dart';
@@ -44,9 +46,23 @@ import 'providers/remote_file_provider.dart';
 import 'providers/file_transfer_provider.dart';
 import 'controllers/clipboard_controller.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  if (args.isNotEmpty && args.first == 'received_file') {
+    final Map<String, dynamic> data = jsonDecode(args[1]);
+    runApp(MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.dark(),
+      home: ReceivedFileWindow(data: data),
+    ));
+    return;
+  }
+
   await AppTheme.initThemeMode();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+    await windowManager.ensureInitialized();
+  }
 
   final identityService = AppIdentity();
   final discoveryService = DiscoveryService();
@@ -75,11 +91,16 @@ Future<void> main() async {
             webrtcP2PService: webrtcP2PService,
           ),
         ),
-        ChangeNotifierProvider(
-          create: (_) => ClipboardController(
+        ChangeNotifierProxyProvider<AppState, ClipboardController>(
+          create: (context) => ClipboardController(
             clipboardService: clipboardService,
             historyService: historyService,
-            webSocketService: webSocketService,
+            onSendMessage: context.read<AppState>().sendMessage,
+          ),
+          update: (context, appState, previous) => previous ?? ClipboardController(
+            clipboardService: clipboardService,
+            historyService: historyService,
+            onSendMessage: appState.sendMessage,
           ),
         ),
         Provider<HistoryService>.value(value: historyService),
@@ -101,9 +122,7 @@ Future<void> main() async {
         ),
         ChangeNotifierProxyProvider<AppState, RemoteFileProvider>(
           create: (context) => RemoteFileProvider(
-            fileTransferService: fileTransferService,
-            peerHost: '',
-            filePort: 5758,
+            appState: context.read<AppState>(),
           ),
           update: (context, appState, previous) {
             final active = appState.pairingService.activeDevice;
@@ -138,8 +157,10 @@ class _WireAppState extends State<WireApp> {
     final clipboardController = context.read<ClipboardController>();
 
     appState.setClipboardController(clipboardController);
-    await appState.init();
-    await clipboardController.init();
+    await Future.wait([
+      appState.init(),
+      clipboardController.init(),
+    ]);
   }
 
   Future<void> _resetApplication() async {
@@ -553,4 +574,32 @@ class _NavItem {
   final IconData selectedIcon;
   final String label;
   const _NavItem({required this.icon, required this.selectedIcon, required this.label});
+}
+class ReceivedFileWindow extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const ReceivedFileWindow({super.key, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = FileReceiveProgress(
+      name: data['name'],
+      path: data['path'],
+      received: data['size'],
+      total: data['size'],
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: ReceivedFilePopup(
+            progress: progress,
+            isStandalone: true,
+            onDismiss: () => windowManager.close(),
+          ),
+        ),
+      ),
+    );
+  }
 }

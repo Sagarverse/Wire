@@ -85,7 +85,7 @@ class FileTransferService {
           final total = int.tryParse(request.headers.value('x-size') ?? '') ?? 0;
           final offset = int.tryParse(request.headers.value('x-offset') ?? '0') ?? 0;
 
-          final dir = await _getReceiveDirectory();
+          final dir = await getReceiveDirectory();
           final fullDestPath = relativePath.isNotEmpty ? p.join(dir.path, relativePath) : p.join(dir.path, filename);
 
           // Create subdirectories if needed
@@ -135,7 +135,7 @@ class FileTransferService {
           final rawPath = request.uri.queryParameters['path'] ?? '';
           final Directory browseDir = rawPath.isNotEmpty
               ? Directory(rawPath)
-              : await _getReceiveDirectory();
+              : await getReceiveDirectory();
 
           if (!_isPathSafe(browseDir.path)) {
             request.response.statusCode = HttpStatus.forbidden;
@@ -241,6 +241,10 @@ class FileTransferService {
     });
   }
 
+  void emitReceiveComplete(FileReceiveProgress progress) {
+    _receiveComplete.add(progress);
+  }
+
   Future<void> sendEntity({
     required String entityPath,
     required String host,
@@ -343,7 +347,7 @@ class FileTransferService {
     }
   }
 
-  Future<Directory> _getReceiveDirectory() async {
+  Future<Directory> getReceiveDirectory() async {
     Directory dir;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       final downloads = Directory('/storage/emulated/0/Download/Wire');
@@ -413,7 +417,7 @@ class FileTransferService {
         throw HttpException('Download failed: ${response.statusCode}');
       }
       final total = response.contentLength;
-      final dir = await _getReceiveDirectory();
+      final dir = await getReceiveDirectory();
       final localPath = p.join(dir.path, filename);
       final file = File(localPath);
       final sink = file.openWrite();

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../services/file_transfer_service.dart';
+import 'app_state.dart';
 
 class RemoteFileEntry {
   final String name;
@@ -29,9 +30,7 @@ class RemoteFileEntry {
 }
 
 class RemoteFileProvider extends ChangeNotifier {
-  final FileTransferService _fileTransferService;
-  String _peerHost;
-  int _filePort;
+  final AppState _appState;
 
   List<RemoteFileEntry> _entries = [];
   String _searchQuery = '';
@@ -45,21 +44,11 @@ class RemoteFileProvider extends ChangeNotifier {
   final Map<String, double> _downloadProgress = {};
 
   RemoteFileProvider({
-    required FileTransferService fileTransferService,
-    required String peerHost,
-    required int filePort,
-  })  : _fileTransferService = fileTransferService,
-        _peerHost = peerHost,
-        _filePort = filePort;
+    required AppState appState,
+  }) : _appState = appState;
 
   void updateConnectionInfo(String host, int port) {
-    if (_peerHost != host || _filePort != port) {
-      _peerHost = host;
-      _filePort = port;
-      // If host changed significantly (not just a minor IP update for same device), 
-      // we might want to reset, but for now we just update for connectivity.
-      notifyListeners();
-    }
+    // No-op: AppState handles connection info internally
   }
 
   List<RemoteFileEntry> get entries => _searchQuery.isEmpty 
@@ -84,11 +73,7 @@ class RemoteFileProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _fileTransferService.browseRemote(
-        host: _peerHost,
-        port: _filePort,
-        path: path,
-      );
+      final result = await _appState.browseRemote(path);
       
       if (!isBack && _currentPath != null) {
         _pathHistory.add(_currentPath);
@@ -115,8 +100,9 @@ class RemoteFileProvider extends ChangeNotifier {
   }
 
   String getThumbnailUrl(RemoteFileEntry entry) {
-    // Preparing for HTTP-based thumbnail API on phone side
-    return 'http://$_peerHost:$_filePort/thumb?path=${Uri.encodeComponent(entry.path)}';
+    final active = _appState.pairingService.activeDevice;
+    if (active == null) return '';
+    return 'http://${active.lastIp}:${active.filePort}/thumb?path=${Uri.encodeComponent(entry.path)}';
   }
 
   void reset() {
@@ -134,18 +120,26 @@ class RemoteFileProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _fileTransferService.downloadRemoteFile(
-        host: _peerHost,
-        port: _filePort,
-        remotePath: entry.path,
-        filename: entry.name,
-        onProgress: (received, total) {
-          if (total > 0) {
-            _downloadProgress[entry.path] = received / total;
-            notifyListeners();
-          }
-        },
-      );
+      if (_appState.webSocketService.isConnected) {
+        final active = _appState.pairingService.activeDevice!;
+        await _appState.fileTransferService.downloadRemoteFile(
+          host: active.lastIp,
+          port: active.filePort,
+          remotePath: entry.path,
+          filename: entry.name,
+          onProgress: (received, total) {
+            if (total > 0) {
+              _downloadProgress[entry.path] = received / total;
+              notifyListeners();
+            }
+          },
+        );
+      } else {
+        // P2P/Internet Path: Ask remote to PUSH the file to us
+        await _appState.requestP2PDownload(entry.path);
+        // Note: Progress for P2P is handled by AppState updating the lastReceivedFile
+        _downloadProgress[entry.path] = 1.0; // Mark as started
+      }
       _downloadProgress[entry.path] = 2.0; // Done
       notifyListeners();
       

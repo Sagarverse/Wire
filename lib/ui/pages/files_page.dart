@@ -333,7 +333,7 @@ class FilesPage extends StatelessWidget {
         );
       }
 
-      await appState.pushFile(filePath);
+      await appState.pushFile(filePath, provider: context.read<FileTransferProvider>());
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show ConnectionState;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mqtt_client/mqtt_client.dart';
@@ -9,9 +11,19 @@ import 'package:uuid/uuid.dart';
 enum P2PRole { initiator, receiver }
 
 class WebRTCP2PService {
-  final String _broker = 'test.mosquitto.org';
-  final int _port = 1883;
   late MqttServerClient _mqttClient;
+  bool _isConnected = false;
+  bool get isConnected => _isConnected;
+  
+  List<Map<String, String>> _iceServers = [
+    {'urls': 'stun:stun.l.google.com:19302'},
+    {'urls': 'stun:stun1.l.google.com:19302'},
+    {'urls': 'stun:stun2.l.google.com:19302'},
+    {'urls': 'stun:stun3.l.google.com:19302'},
+    {'urls': 'stun:stun4.l.google.com:19302'},
+    {'urls': 'stun:stun.nextcloud.com:443'},
+    {'urls': 'stun:stun.cloudflare.com:3478'},
+  ];
 
   // WebRTC
   RTCPeerConnection? _peerConnection;
@@ -20,20 +32,36 @@ class WebRTCP2PService {
 
   // Callbacks
   Function(String text)? onMessageReceived;
+  final _onBinaryReceived = StreamController<Uint8List>.broadcast();
+  Stream<Uint8List> get onBinaryReceived => _onBinaryReceived.stream;
   Function(ConnectionState state)? onConnectionStateChange;
 
-  bool _isConnected = false;
   String? _myId;
   String? _currentTargetId;
   Timer? _heartbeatTimer;
+  bool _isInitialConnection = true;
+
+  void setIceServers(List<Map<String, String>> servers) {
+    _iceServers = servers;
+  }
 
   Future<void> initialize() async {
-    _mqttClient = MqttServerClient.withPort(_broker, _clientId, _port);
+    _mqttClient = MqttServerClient.withPort('test.mosquitto.org', _clientId, 1883);
     _mqttClient.logging(on: false);
     _mqttClient.keepAlivePeriod = 20;
+    _mqttClient.autoReconnect = true; // IMPORTANT for production
     _mqttClient.onDisconnected = () {
-      // Handle MQTT disconnection internally
+       debugPrint('WebRTC Signaling: MQTT Disconnected');
     };
+    _mqttClient.onConnected = () {
+      debugPrint('WebRTC Signaling: MQTT Connected');
+      if (!_isInitialConnection && _myId != null) {
+        // Re-subscribe after reconnect
+        startListening(_myId!);
+      }
+      _isInitialConnection = false;
+    };
+
     final connMess = MqttConnectMessage()
         .withClientIdentifier(_clientId)
         .startClean()
@@ -43,12 +71,14 @@ class WebRTCP2PService {
     try {
       await _mqttClient.connect();
     } catch (e) {
+      debugPrint('MQTT Connection Error: $e');
       _mqttClient.disconnect();
       return;
     }
 
     _mqttClient.updates!.listen((List<MqttReceivedMessage<MqttMessage?>>? c) {
-      final recMess = c![0].payload as MqttPublishMessage;
+      if (c == null) return;
+      final recMess = c[0].payload as MqttPublishMessage;
       final payload = MqttPublishPayload.bytesToStringAsString(
         recMess.payload.message,
       );
@@ -58,7 +88,7 @@ class WebRTCP2PService {
 
   Future<void> startListening(String myId) async {
     _myId = myId;
-    // Listen for offers directed to me
+    // Listen for offers directed specifically to my deviceId
     _mqttClient.subscribe(
       'wire/p2p/+_to_$myId',
       MqttQos.atLeastOnce,
@@ -69,7 +99,7 @@ class WebRTCP2PService {
     _myId = sourceId;
     _currentTargetId = targetId;
     
-    // Subscribe to answers from the target
+    // Subscribe to signaling messages from the specific target device
     _mqttClient.subscribe(
       'wire/p2p/${targetId}_to_$sourceId',
       MqttQos.atLeastOnce,
@@ -80,9 +110,7 @@ class WebRTCP2PService {
 
   Future<void> _setupWebRTC(P2PRole role) async {
     final configuration = {
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-      ],
+      'iceServers': _iceServers,
     };
 
     _peerConnection = await createPeerConnection(configuration);
@@ -139,6 +167,11 @@ class WebRTCP2PService {
 
   void _setupDataChannel() {
     _dataChannel!.onMessage = (RTCDataChannelMessage message) {
+      if (message.isBinary) {
+        _onBinaryReceived.add(message.binary);
+        return;
+      }
+      
       if (message.text == 'ping') {
         sendMessage('pong');
         return;
@@ -173,9 +206,15 @@ class WebRTCP2PService {
     try {
       final msg = jsonDecode(jsonStr);
       final type = msg['type'];
+      final from = msg['from']?.toString();
+
+      // IMPORTANT: Ignore signaling messages from self to prevent loopback/self-connection
+      if (from == _myId) {
+        return;
+      }
 
       if (type == 'offer') {
-        _currentTargetId = msg['from']; 
+        _currentTargetId = from; 
         await _peerConnection!.setRemoteDescription(
           RTCSessionDescription(msg['sdp'], 'offer'),
         );
@@ -206,6 +245,12 @@ class WebRTCP2PService {
   void sendMessage(String text) {
     if (_isConnected && _dataChannel != null) {
       _dataChannel!.send(RTCDataChannelMessage(text));
+    }
+  }
+
+  void sendBinary(Uint8List data) {
+    if (_isConnected && _dataChannel != null) {
+      _dataChannel!.send(RTCDataChannelMessage.fromBinary(data));
     }
   }
 

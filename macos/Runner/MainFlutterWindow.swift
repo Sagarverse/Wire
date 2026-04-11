@@ -1,7 +1,7 @@
 import Cocoa
 import FlutterMacOS
 
-class MainFlutterWindow: NSWindow {
+class MainFlutterWindow: NSWindow, NSWindowDelegate {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -13,6 +13,12 @@ class MainFlutterWindow: NSWindow {
       appDelegate.setupChannels(with: flutterViewController)
     }
 
+    self.delegate = self
     super.awakeFromNib()
+  }
+
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    self.orderOut(nil)
+    return false
   }
 }

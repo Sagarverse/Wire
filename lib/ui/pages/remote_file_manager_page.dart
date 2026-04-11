@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -5,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/app_state.dart';
 import '../../providers/remote_file_provider.dart';
+import '../../providers/file_transfer_provider.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/file_action_sheet.dart';
 import '../../widgets/liquid_background.dart';
@@ -80,7 +82,7 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
               SnackBar(content: Text('Sending ${file.name}...')),
             );
             try {
-              await appState.pushFile(file.path);
+              await appState.pushFile(file.path, provider: context.read<FileTransferProvider>());
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
