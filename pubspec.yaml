@@ -70,5 +70,5 @@ flutter:
   uses-material-design: true
 
   assets:
-    - wire_icon.png
+    - assets/images/wire_icon.png
     - assets/developer_profile.jpg

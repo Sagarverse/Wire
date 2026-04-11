@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
@@ -178,20 +177,21 @@ class ControlHubPage extends StatelessWidget {
 
   Future<void> _pickAndSend(BuildContext context, AppState appState) async {
     try {
-      final result = await FilePicker.platform.pickFiles();
+      final result = await FilePicker.platform.pickFiles(allowMultiple: true);
       if (result == null || result.files.isEmpty) return;
-      final filePath = result.files.single.path;
-      if (filePath == null) return;
+      final filePaths = result.files.map((f) => f.path).whereType<String>().toList();
+      if (filePaths.isEmpty) return;
+      
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sending ${result.files.single.name}…')),
+          SnackBar(content: Text('Sending ${filePaths.length} items…')),
         );
       }
-      await appState.pushFile(filePath);
+      await appState.pushFiles(filePaths);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Sent ${result.files.single.name} ✓'),
+            content: Text('Sent ${filePaths.length} items ✓'),
             backgroundColor: Colors.green,
           ),
         );

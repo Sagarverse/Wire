@@ -77,16 +77,16 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
               );
               return;
             }
-            final file = details.files.first;
+            final filePaths = details.files.map((f) => f.path).toList();
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Sending ${file.name}...')),
+              SnackBar(content: Text('Sending ${filePaths.length} items...')),
             );
             try {
-              await appState.pushFile(file.path, provider: context.read<FileTransferProvider>());
+              await appState.pushFiles(filePaths, provider: context.read<FileTransferProvider>());
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Sent ${file.name} ✓'),
+                    content: Text('Uploaded ${filePaths.length} items ✓'),
                     backgroundColor: Colors.green,
                   ),
                 );
@@ -132,6 +132,19 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
                       ),
                   actions: [
                     IconButton(
+                      icon: Icon(provider.isGridView ? Icons.view_list_rounded : Icons.grid_view_rounded),
+                      onPressed: () => provider.toggleViewMode(),
+                    ),
+                    PopupMenuButton<RemoteFileSort>(
+                      icon: const Icon(Icons.sort_rounded),
+                      onSelected: (mode) => provider.setSort(mode, ascending: provider.sortMode == mode ? !provider.isAscending : true),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: RemoteFileSort.name, child: Text('Sort by Name')),
+                        const PopupMenuItem(value: RemoteFileSort.size, child: Text('Sort by Size')),
+                        const PopupMenuItem(value: RemoteFileSort.date, child: Text('Sort by Date')),
+                      ],
+                    ),
+                    IconButton(
                       icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
                       onPressed: () {
                         setState(() {
@@ -165,12 +178,25 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
                             ? _buildEmptyState(scheme)
                             : RefreshIndicator(
                                   onRefresh: () => provider.browse(provider.currentPath),
-                                  child: ListView.builder(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    itemCount: provider.entries.length,
-                                    itemBuilder: (context, index) =>
-                                        _buildEntryTile(scheme, provider.entries[index], provider),
-                                  ),
+                                  child: provider.isGridView
+                                      ? GridView.builder(
+                                          padding: const EdgeInsets.all(16),
+                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 2,
+                                            crossAxisSpacing: 12,
+                                            mainAxisSpacing: 12,
+                                            childAspectRatio: 1.1,
+                                          ),
+                                          itemCount: provider.entries.length,
+                                          itemBuilder: (context, index) =>
+                                              _buildEntryGrid(scheme, provider.entries[index], provider),
+                                        )
+                                      : ListView.builder(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                          itemCount: provider.entries.length,
+                                          itemBuilder: (context, index) =>
+                                              _buildEntryTile(scheme, provider.entries[index], provider),
+                                        ),
                                 ),
                       ),
                     ],
@@ -388,6 +414,76 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  Widget _buildEntryGrid(ColorScheme scheme, RemoteFileEntry entry, RemoteFileProvider provider) {
+    final progress = provider.downloadProgress[entry.path];
+    final isDownloading = progress != null && progress >= 0 && progress < 1.5;
+    final isDone = progress == 2.0;
+
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _navigateInto(provider, entry),
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: (entry.isDir ? scheme.primary : _getFileColor(scheme, entry.name))
+                        .withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    entry.isDir ? Icons.folder_rounded : _getFileIcon(entry.name),
+                    color: entry.isDir ? scheme.primary : _getFileColor(scheme, entry.name),
+                    size: 32,
+                  ),
+                ),
+                if (isDownloading)
+                  SizedBox(
+                    width: 58,
+                    height: 58,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 3,
+                      color: scheme.primary,
+                    ),
+                  ),
+                if (isDone)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Icon(Icons.check_circle_rounded, color: scheme.tertiary, size: 20),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                entry.name,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              entry.isDir ? 'Folder' : _formatSize(entry.size),
+              style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.4), fontSize: 10),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

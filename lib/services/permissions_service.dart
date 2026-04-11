@@ -18,11 +18,17 @@ class PermissionsService {
 
   Future<bool> requestStorage() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
-    await Permission.storage.request();
-    await Permission.photos.request();
-    await Permission.videos.request();
-    final status = await Permission.audio.request();
-    return status.isGranted;
+    
+    // On Android 13+, these are the required permissions for media access
+    // Permission.storage is deprecated for API 33+
+    final statuses = await [
+      Permission.storage,
+      Permission.photos,
+      Permission.videos,
+      Permission.audio,
+    ].request();
+
+    return statuses.values.any((status) => status.isGranted);
   }
 
   Future<bool> requestPhone() async {
@@ -55,6 +61,19 @@ class PermissionsService {
 
   Future<bool> checkPermissionStatus(Permission p) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
+    
+    if (p == Permission.storage) {
+      // On Android 13+, check granular permissions if storage is denied
+      final storageGranted = await Permission.storage.isGranted;
+      if (storageGranted) return true;
+      
+      final photosGranted = await Permission.photos.isGranted;
+      final videosGranted = await Permission.videos.isGranted;
+      final audioGranted = await Permission.audio.isGranted;
+      
+      return photosGranted || videosGranted || audioGranted;
+    }
+    
     return await p.status.isGranted;
   }
 }

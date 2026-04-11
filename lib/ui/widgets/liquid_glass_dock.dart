@@ -70,15 +70,17 @@ class LiquidGlassDock extends StatelessWidget {
                     color: scheme.primary.withValues(
                       alpha: isDark ? 0.18 : 0.08,
                     ),
-                    blurRadius: 24,
+                    blurRadius: 24.clamp(0, double.infinity).toDouble(),
                     offset: const Offset(0, 10),
-                    spreadRadius: -4,
+                    spreadRadius: -2, // Normalized from -4
                   ),
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.26 : 0.08),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                    spreadRadius: -3,
+                    color: Colors.black.withValues(
+                      alpha: isDark ? 0.3 : 0.06,
+                    ),
+                    blurRadius: 18.clamp(0, double.infinity).toDouble(),
+                    offset: const Offset(0, 8),
+                    spreadRadius: -1, // Normalized from -3
                   ),
                 ],
               ),
@@ -132,18 +134,30 @@ class _DockButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: selected
-            ? scheme.primary.withValues(alpha: isDark ? 0.4 : 0.25)
-            : Colors.transparent,
-        border: selected
-            ? Border.all(color: (isDark ? Colors.white : scheme.primary).withValues(alpha: 0.4), width: 1.2)
-            : null,
-      ),
+    return AnimatedScale(
+      scale: selected ? 1.15 : 1.0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.elasticOut,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: selected
+              ? scheme.primary.withValues(alpha: isDark ? 0.35 : 0.2)
+              : Colors.transparent,
+          border: selected
+              ? Border.all(color: (isDark ? Colors.white : scheme.primary).withValues(alpha: 0.3), width: 1.2)
+              : null,
+          boxShadow: [
+            if (selected)
+              BoxShadow(
+                color: scheme.primary.withValues(alpha: 0.2),
+                blurRadius: 15.clamp(0, double.infinity).toDouble(),
+                spreadRadius: -1, // Normalized from -2
+              ),
+          ],
+        ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
@@ -188,6 +202,7 @@ class _DockButton extends StatelessWidget {
                         : scheme.onSurface.withValues(alpha: 0.72),
                   ),
                 ),
+        ),
         ),
       ),
     );

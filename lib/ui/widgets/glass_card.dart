@@ -34,25 +34,43 @@ class GlassCard extends StatelessWidget {
     return ClipRRect(
       borderRadius: borderRadius ?? BorderRadius.circular(24),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        filter: ImageFilter.blur(
+          sigmaX: blur.abs(), 
+          sigmaY: blur.abs(),
+        ),
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
             color: color ?? (isDark
-              ? (accent != null ? accent!.withValues(alpha: 0.1) : Colors.white.withValues(alpha: opacity))
-              : Colors.white.withValues(alpha: opacity * 1.5)),
+              ? (accent != null ? accent!.withValues(alpha: 0.12) : Colors.white.withValues(alpha: opacity))
+              : Colors.white.withValues(alpha: opacity * 1.8)),
             borderRadius: borderRadius ?? BorderRadius.circular(24),
             border: border ?? Border.all(
-              color: (accent ?? (isDark ? Colors.white : Colors.black)).withValues(alpha: isDark ? 0.15 : 0.08),
+              color: (accent ?? (isDark ? Colors.white : Colors.black)).withValues(alpha: isDark ? 0.22 : 0.12),
               width: 1.0,
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                (accent ?? Colors.white).withValues(alpha: 0.05),
+                Colors.transparent,
+                (accent ?? Colors.white).withValues(alpha: 0.02),
+              ],
+              stops: const [0.0, 0.5, 1.0],
             ),
             boxShadow: [
               if (accent != null)
                 BoxShadow(
-                  color: accent!.withValues(alpha: 0.1),
-                  blurRadius: 20,
-                  spreadRadius: -5,
+                  color: accent!.withValues(alpha: 0.15),
+                  blurRadius: 30.clamp(0, double.infinity).toDouble(),
+                  spreadRadius: -2,
                 ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
+                blurRadius: 20.clamp(0, double.infinity).toDouble(),
+                offset: const Offset(0, 8),
+              ),
               if (boxShadow != null) ...boxShadow!,
             ],
           ),

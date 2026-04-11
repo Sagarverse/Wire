@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import 'device_pairing_page.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../services/permissions_service.dart';
+import '../widgets/qr_pairing_dialog.dart';
 
 class SettingsPage extends StatelessWidget {
   final VoidCallback onResetApp;
@@ -110,6 +111,7 @@ class SettingsPage extends StatelessWidget {
                                     ? 'Wire Mac'
                                     : 'Wire Device',
                                 port: 5757,
+                                mode: appState.connectionMode.name,
                               ),
                             );
                           },
@@ -150,7 +152,6 @@ class SettingsPage extends StatelessWidget {
                               appState.toggleSetting('discovery_enabled', v),
                           icon: Icons.visibility_rounded,
                         ),
-                        _buildConnectionModeToggle(context, appState),
                       ],
                     ),
 
@@ -559,47 +560,6 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildConnectionModeToggle(BuildContext context, AppState appState) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: scheme.onSurface.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: SegmentedButton<ConnectionMode>(
-          showSelectedIcon: false,
-          selected: {appState.connectionMode},
-          onSelectionChanged: (val) => appState.setConnectionMode(val.first),
-          style: SegmentedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            selectedBackgroundColor: scheme.onSurface,
-            selectedForegroundColor: scheme.surface,
-            side: BorderSide.none,
-          ),
-          segments: const [
-            ButtonSegment(
-              value: ConnectionMode.local,
-              icon: Icon(Icons.wifi_rounded, size: 16),
-              label: Text('Local', style: TextStyle(fontSize: 11)),
-            ),
-            ButtonSegment(
-              value: ConnectionMode.p2p,
-              icon: Icon(Icons.public_rounded, size: 16),
-              label: Text('Internet', style: TextStyle(fontSize: 11)),
-            ),
-            ButtonSegment(
-              value: ConnectionMode.auto,
-              icon: Icon(Icons.auto_awesome_rounded, size: 16),
-              label: Text('Smart', style: TextStyle(fontSize: 11)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildPermissionSection(BuildContext context, AppState appState) {
     final permissions = PermissionsService();
@@ -673,7 +633,12 @@ class SettingsPage extends StatelessWidget {
                     subtitle: 'File sharing access',
                     permission: Permission.storage,
                     onGrant: () async {
-                      await permissions.requestStorage();
+                      final status = await permissions.requestStorage();
+                      if (!status) {
+                        // If still not granted, it might be permanently denied.
+                        // Open app settings as a fallback.
+                        await openAppSettings();
+                      }
                       setState(() {});
                     },
                   ),

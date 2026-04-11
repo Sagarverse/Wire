@@ -8,12 +8,14 @@ class QrPairingDialog extends StatelessWidget {
   final String deviceId;
   final String deviceName;
   final int port;
+  final String mode;
 
   const QrPairingDialog({
     super.key,
     required this.deviceId,
     required this.deviceName,
     required this.port,
+    required this.mode,
   });
 
   Future<List<String>> _getLocalIps() async {
@@ -51,6 +53,7 @@ class QrPairingDialog extends StatelessWidget {
                 'ip': primaryIp,
                 'ips': ips, // Include all IPs in QR meta
                 'port': port,
+                'mode': mode,
               })
             : null;
 

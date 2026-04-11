@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show ConnectionState;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -11,7 +10,7 @@ import 'package:uuid/uuid.dart';
 enum P2PRole { initiator, receiver }
 
 class WebRTCP2PService {
-  late MqttServerClient _mqttClient;
+  MqttServerClient? _mqttClient;
   bool _isConnected = false;
   bool get isConnected => _isConnected;
   
@@ -23,6 +22,10 @@ class WebRTCP2PService {
     {'urls': 'stun:stun4.l.google.com:19302'},
     {'urls': 'stun:stun.nextcloud.com:443'},
     {'urls': 'stun:stun.cloudflare.com:3478'},
+    {'urls': 'stun:stun.anyfirewall.com:3478'},
+    {'urls': 'stun:stun.stunprotocol.org:3478'},
+    {'urls': 'stun:stun.voiparound.com:3478'},
+    {'urls': 'stun:stun.voipstunt.com:3478'},
   ];
 
   // WebRTC
@@ -40,20 +43,28 @@ class WebRTCP2PService {
   String? _currentTargetId;
   Timer? _heartbeatTimer;
   bool _isInitialConnection = true;
+  bool _isInitializing = false;
 
   void setIceServers(List<Map<String, String>> servers) {
     _iceServers = servers;
   }
 
   Future<void> initialize() async {
-    _mqttClient = MqttServerClient.withPort('test.mosquitto.org', _clientId, 1883);
-    _mqttClient.logging(on: false);
-    _mqttClient.keepAlivePeriod = 20;
-    _mqttClient.autoReconnect = true; // IMPORTANT for production
-    _mqttClient.onDisconnected = () {
-       debugPrint('WebRTC Signaling: MQTT Disconnected');
+    if (_isInitializing) return;
+    if (_mqttClient?.connectionStatus?.state == MqttConnectionState.connected) return;
+
+    _isInitializing = true;
+    _mqttClient = MqttServerClient.withPort('broker.hivemq.com', _clientId, 8884);
+    _mqttClient!.useWebSocket = true;
+    _mqttClient!.secure = true;
+    _mqttClient!.setProtocolV311();
+    _mqttClient!.logging(on: false);
+    _mqttClient!.keepAlivePeriod = 20;
+    _mqttClient!.autoReconnect = true;
+    _mqttClient!.onDisconnected = () {
+        debugPrint('WebRTC Signaling: Secure WSS Disconnected');
     };
-    _mqttClient.onConnected = () {
+    _mqttClient!.onConnected = () {
       debugPrint('WebRTC Signaling: MQTT Connected');
       if (!_isInitialConnection && _myId != null) {
         // Re-subscribe after reconnect
@@ -66,17 +77,20 @@ class WebRTCP2PService {
         .withClientIdentifier(_clientId)
         .startClean()
         .withWillQos(MqttQos.atLeastOnce);
-    _mqttClient.connectionMessage = connMess;
+    _mqttClient!.connectionMessage = connMess;
 
     try {
-      await _mqttClient.connect();
+      await _mqttClient!.connect().timeout(const Duration(seconds: 10));
     } catch (e) {
       debugPrint('MQTT Connection Error: $e');
-      _mqttClient.disconnect();
+      _mqttClient!.disconnect();
+      _isInitializing = false;
       return;
     }
+    
+    _isInitializing = false;
 
-    _mqttClient.updates!.listen((List<MqttReceivedMessage<MqttMessage?>>? c) {
+    _mqttClient!.updates!.listen((List<MqttReceivedMessage<MqttMessage?>>? c) {
       if (c == null) return;
       final recMess = c[0].payload as MqttPublishMessage;
       final payload = MqttPublishPayload.bytesToStringAsString(
@@ -88,19 +102,37 @@ class WebRTCP2PService {
 
   Future<void> startListening(String myId) async {
     _myId = myId;
-    // Listen for offers directed specifically to my deviceId
-    _mqttClient.subscribe(
-      'wire/p2p/+_to_$myId',
-      MqttQos.atLeastOnce,
-    );
+    
+    if (_mqttClient?.connectionStatus?.state != MqttConnectionState.connected) {
+      await initialize();
+    }
+
+    if (_mqttClient?.connectionStatus?.state == MqttConnectionState.connected) {
+      // Listen for offers directed specifically to my deviceId
+      _mqttClient!.subscribe(
+        'wire/p2p/+_to_$myId',
+        MqttQos.atLeastOnce,
+      );
+    }
   }
 
   Future<void> initiateConnection(String sourceId, String targetId) async {
     _myId = sourceId;
     _currentTargetId = targetId;
     
+    // Ensure we are connected before subscribing
+    if (_mqttClient?.connectionStatus?.state != MqttConnectionState.connected) {
+      debugPrint('WebRTC Signaling: Waiting for MQTT connection before initiation...');
+      await initialize();
+    }
+
+    if (_mqttClient?.connectionStatus?.state != MqttConnectionState.connected) {
+       debugPrint('WebRTC Signaling: Connection failed. Cannot initiate.');
+       return;
+    }
+
     // Subscribe to signaling messages from the specific target device
-    _mqttClient.subscribe(
+    _mqttClient!.subscribe(
       'wire/p2p/${targetId}_to_$sourceId',
       MqttQos.atLeastOnce,
     );
@@ -199,7 +231,7 @@ class WebRTCP2PService {
     
     final builder = MqttClientPayloadBuilder();
     builder.addString(jsonEncode(data));
-    _mqttClient.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+    _mqttClient?.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
   }
 
   Future<void> _handleSignalingMessage(String jsonStr) async {
@@ -254,12 +286,14 @@ class WebRTCP2PService {
     }
   }
 
-  void closeRoom() {
+  void disconnect() {
     _heartbeatTimer?.cancel();
     _dataChannel?.close();
     _peerConnection?.close();
+    _mqttClient?.disconnect();
     _peerConnection = null;
     _dataChannel = null;
     _isConnected = false;
+    debugPrint('WebRTCP2PService: P2P signaling stopped.');
   }
 }

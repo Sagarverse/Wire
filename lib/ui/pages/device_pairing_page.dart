@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -223,10 +222,10 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
               children: [
                 FilledButton.icon(
                   onPressed: () {
-                    if (isPaired) {
-                      widget.onMakeActive(item as PairedDevice);
-                    } else {
-                      widget.onConnectToPeer(item as DiscoveryPeerInfo);
+                    if (item is PairedDevice) {
+                      widget.onMakeActive(item);
+                    } else if (item is DiscoveryPeerInfo) {
+                      widget.onConnectToPeer(item);
                     }
                   },
                   icon: Icon(isPaired ? Icons.swap_horiz_rounded : Icons.add_link_rounded, size: 16),
@@ -236,11 +235,11 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
                     foregroundColor: isPaired ? scheme.onSurface : scheme.onPrimary,
                   ),
                 ),
-                if (isPaired) ...[
+                if (item is PairedDevice) ...[
                   const SizedBox(width: 8),
                   IconButton(
                     icon: Icon(Icons.delete_outline_rounded, size: 20, color: scheme.error.withValues(alpha: 0.6)),
-                    onPressed: () => _showDeleteConfirm(context, appState, item as PairedDevice),
+                    onPressed: () => _showDeleteConfirm(context, appState, item),
                     tooltip: 'Remove Device',
                   ),
                 ],
@@ -273,7 +272,6 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
   }
 
   void _showQrGenerator(BuildContext context) async {
-    final ips = await context.read<AppState>().getLocalIps();
     if (!context.mounted) return;
     showDialog(
       context: context,
@@ -281,6 +279,7 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
         deviceId: context.read<AppState>().deviceId,
         deviceName: context.read<AppState>().deviceName,
         port: 5757,
+        mode: context.read<AppState>().connectionMode.name,
       ),
     );
   }
@@ -311,6 +310,7 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
                             deviceName: data['name'],
                             wsPort: data['port'],
                             filePort: 5758,
+                            mode: data['mode'] ?? 'auto',
                           );
                           widget.onConnectToPeer(peer);
                           Navigator.pop(context);
@@ -328,14 +328,24 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
                     icon: const Icon(Icons.close_rounded),
                   ),
                 ),
-                const Positioned(
+                Positioned(
                   bottom: 24,
                   left: 0,
                   right: 0,
                   child: Text(
                     'Scan Device QR',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, shadows: [Shadow(blurRadius: 10, color: Colors.black)]),
+                    style: TextStyle(
+                      color: Colors.white, 
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 16, 
+                      shadows: [
+                        Shadow(
+                          blurRadius: 10.clamp(0, double.infinity).toDouble(), 
+                          color: Colors.black,
+                        ),
+                      ],
+                    ),
                   ),
                 )
               ],

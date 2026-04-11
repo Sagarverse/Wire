@@ -53,6 +53,15 @@ class FileTransferService {
     return safe;
   }
 
+  bool get isServerRunning => _server != null;
+
+  Future<void> stopServer() async {
+    await _server?.close(force: true);
+    _server = null;
+    _actualPort = null;
+    debugPrint('FileTransferService: Local file server stopped.');
+  }
+
   Future<void> startServer() async {
     if (kIsWeb) return;
     if (_server != null) {
@@ -245,46 +254,48 @@ class FileTransferService {
     _receiveComplete.add(progress);
   }
 
-  Future<void> sendEntity({
-    required String entityPath,
+  Future<void> sendEntities({
+    required List<String> paths,
     required String host,
     required int port,
     required void Function(int sent, int total, String currentFile) onProgress,
   }) async {
-    final entity = FileSystemEntity.isDirectorySync(entityPath) ? Directory(entityPath) : File(entityPath);
+    var totalBytes = 0;
+    final allFiles = <MapEntry<File, String>>[];
 
-    if (entity is File) {
-      await _internalSendFile(
-        file: entity,
-        host: host,
-        port: port,
-        onProgress: (sent, total) => onProgress(sent, total, p.basename(entityPath)),
-      );
-    } else if (entity is Directory) {
-      final files = entity.listSync(recursive: true).whereType<File>().toList();
-      var totalBytes = 0;
-      for (final f in files) {
+    for (final path in paths) {
+      final isDir = FileSystemEntity.isDirectorySync(path);
+      if (isDir) {
+        final dir = Directory(path);
+        final dirFiles = dir.listSync(recursive: true).whereType<File>().toList();
+        final baseName = p.basename(path);
+        for (final f in dirFiles) {
+          final relPath = p.relative(f.path, from: path);
+          allFiles.add(MapEntry(f, p.join(baseName, relPath)));
+          totalBytes += f.lengthSync();
+        }
+      } else {
+        final f = File(path);
+        allFiles.add(MapEntry(f, p.basename(path)));
         totalBytes += f.lengthSync();
       }
+    }
 
-      var cumulativeSent = 0;
-      for (final f in files) {
-        final relativePath = p.relative(f.path, from: entity.path);
-        final baseFolderName = p.basename(entity.path);
-        final destRelativePath = p.join(baseFolderName, relativePath);
+    var cumulativeSent = 0;
+    for (final entry in allFiles) {
+      final file = entry.key;
+      final destPath = entry.value;
 
-        await _internalSendFile(
-          file: f,
-          host: host,
-          port: port,
-          relativePath: destRelativePath,
-          onProgress: (sent, total) {
-            // This progress is per-file, but we could make it global
-            onProgress(cumulativeSent + sent, totalBytes, p.basename(f.path));
-          },
-        );
-        cumulativeSent += f.lengthSync();
-      }
+      await _internalSendFile(
+        file: file,
+        host: host,
+        port: port,
+        relativePath: destPath,
+        onProgress: (sent, total) {
+          onProgress(cumulativeSent + sent, totalBytes, p.basename(file.path));
+        },
+      );
+      cumulativeSent += file.lengthSync();
     }
   }
 

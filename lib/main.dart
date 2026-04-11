@@ -11,7 +11,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:window_manager/window_manager.dart';
 
 
@@ -366,6 +365,15 @@ class _WireHomePageState extends State<WireHomePage> {
     }
     _sendBatteryStatus();
     await _initTray();
+    
+    // On macOS, start with window hidden unless it is the first run
+    // On macOS, activate the app briefly to ensure Tray events work, then hide.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+      await windowManager.show();
+      await Future.delayed(const Duration(milliseconds: 1000));
+      await windowManager.hide();
+      await windowManager.setSkipTaskbar(true);
+    }
   }
 
   void _handleAndroidMessage(String type, Map<String, dynamic> message, AppState appState) async {
@@ -402,21 +410,23 @@ class _WireHomePageState extends State<WireHomePage> {
   Future<void> _initTray() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return;
     final appState = context.read<AppState>();
-    final clipboardController = context.read<ClipboardController>();
+
+    void updateTray() {
+       if (mounted) {
+         _trayService.updateMenu(
+           state: appState.getTrayState(),
+           onAction: appState.handleTrayAction,
+         );
+       }
+    }
 
     await _trayService.init(
-      title: 'Wire Sync',
-      clipboardItems: clipboardController.history.map((e) => e.text).toList(),
-      transferItems: [],
-      paused: appState.isSyncPaused,
-      discoveryEnabled: appState.discoveryEnabled,
-      connected: _webSocketService.isClientConnected,
-      onShow: () => _platformChannel.invokeMethod('activateApp'),
-      onTogglePause: () => appState.toggleSetting('sync_paused', !appState.isSyncPaused),
-      onToggleDiscovery: () => appState.toggleSetting('discovery_enabled', !appState.discoveryEnabled),
-      onDisconnect: () => _webSocketService.disconnectClient(),
-      onQuit: () => exit(0),
+      state: appState.getTrayState(),
+      onAction: appState.handleTrayAction,
     );
+
+    // Subscribe to AppState changes to refresh tray menu dynamically
+    appState.addListener(updateTray);
   }
 
   void _handleHandoff(String url) async {
@@ -534,9 +544,7 @@ class _WireHomePageState extends State<WireHomePage> {
                           label: n.label,
                         )).toList(),
                         selectedIndex: _navigationIndex,
-                        onSelect: (index) {
-                          _onNavigationItemTapped(index);
-                        },
+                        onSelect: _onNavigationItemTapped,
                       ),
                     ),
                   ),

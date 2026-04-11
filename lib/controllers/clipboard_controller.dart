@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../models/clipboard_item.dart';
 import '../services/clipboard_service.dart';
 import '../services/history_service.dart';
-import '../services/websocket_service.dart';
 
 class ClipboardController extends ChangeNotifier {
   final ClipboardService clipboardService;

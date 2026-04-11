@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +11,6 @@ import '../widgets/glass_card.dart';
 import '../../widgets/liquid_background.dart';
 import 'device_pairing_page.dart';
 import 'remote_file_manager_page.dart';
-import '../widgets/p2p_connection_dialog.dart';
 import '../widgets/file_preview_overlay.dart';
 import 'package:open_file/open_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
@@ -124,78 +124,92 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           child: Scaffold(
             extendBody: true,
             body: LiquidBackground(
+              accent: appState.lastStatus == ConnectionStatus.error 
+                  ? Colors.red 
+                  : (appState.connectionMode == ConnectionMode.p2p ? Colors.blue : Colors.green),
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [
                     // ── Top Bar ──────────────────────────────────────────────────
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 60, 24, 0),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 50,
-                                  height: 50,
-                                  margin: const EdgeInsets.only(right: 16),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      colors: [scheme.primary, scheme.tertiary],
+                        padding: const EdgeInsets.fromLTRB(16, 60, 16, 0),
+                        child: GlassCard(
+                          padding: const EdgeInsets.all(20),
+                          accent: scheme.primary,
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 54,
+                                    height: 54,
+                                    margin: const EdgeInsets.only(right: 16),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        colors: [scheme.primary, scheme.tertiary],
+                                      ),
+                                      image: appState.userAvatar != null
+                                          ? DecorationImage(
+                                              image: NetworkImage(
+                                                  appState.userAvatar!))
+                                          : null,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: scheme.primary.withValues(alpha: 0.3),
+                                          blurRadius: 15.clamp(0, double.infinity).toDouble(),
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
                                     ),
-                                    image: appState.userAvatar != null
-                                        ? DecorationImage(
-                                            image: NetworkImage(
-                                                appState.userAvatar!))
+                                    child: appState.userAvatar == null
+                                        ? Icon(Icons.person_rounded,
+                                            color: scheme.onPrimary)
                                         : null,
                                   ),
-                                  child: appState.userAvatar == null
-                                      ? Icon(Icons.person_rounded,
-                                          color: scheme.onPrimary)
-                                      : null,
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _timeGreeting(),
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: scheme.onSurface
-                                            .withValues(alpha: 0.5),
-                                        letterSpacing: 0.5,
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _timeGreeting(),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: scheme.onSurface
+                                              .withValues(alpha: 0.5),
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      isPeerConnected
-                                          ? (peerName ?? 'Device')
-                                          : appState.userName,
-                                      style: TextStyle(
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.w900,
-                                        color: scheme.onSurface,
-                                        letterSpacing: -0.5,
+                                      Text(
+                                        isPeerConnected
+                                            ? (peerName ?? 'Device')
+                                            : appState.userName,
+                                        style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w900,
+                                          color: scheme.onSurface,
+                                          letterSpacing: -0.5,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const Spacer(),
-                                _CircleIconButton(
-                                  icon: Icons.important_devices_rounded,
-                                  onPressed: () =>
-                                      _showDevicePairing(context, appState),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 32),
-                            _ConnectionModeToggle(
-                              mode: appState.connectionMode,
-                              onChanged: (mode) =>
-                                  appState.setConnectionMode(mode),
-                            ),
-                          ],
+                                    ],
+                                  ),
+                                  const Spacer(),
+                                  _CircleIconButton(
+                                    icon: Icons.important_devices_rounded,
+                                    onPressed: () =>
+                                        _showDevicePairing(context, appState),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+                              _ConnectionModeToggle(
+                                mode: appState.connectionMode,
+                                onChanged: (mode) =>
+                                    appState.setConnectionMode(mode),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -210,6 +224,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             child: _StatusHub(
                               status: appState.lastStatus,
                               connectionType: appState.connectionType,
+                              modeMismatch: appState.modeMismatch,
                               pulseController: _pulseController,
                               onTap: () => appState.reconnect(),
                             ),
@@ -218,71 +233,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       ),
                     ),
 
-                    // ── P2P Anywhere Toggle ─────────────────────────────────────
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 8),
-                        child: StaggeredAnimatedItem(
-                          index: 1,
-                          child: GestureDetector(
-                            onTap: () {
-                              showDialog(
-                                  context: context,
-                                  builder: (_) => const P2PConnectionDialog());
-                            },
-                            child: GlassCard(
-                              accent: scheme.primary,
-                              borderRadius: BorderRadius.circular(24),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 16),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: scheme.primary.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: Icon(Icons.auto_awesome_rounded,
-                                        color: scheme.primary, size: 20),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Smart Sync',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15),
-                                        ),
-                                        Text(
-                                          'Automatic Local & Internet switching',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: scheme.onSurface
-                                                .withValues(alpha: 0.5),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Switch(
-                                    value: appState.connectionMode == ConnectionMode.auto,
-                                    onChanged: (val) {
-                                       appState.setConnectionMode(val ? ConnectionMode.auto : ConnectionMode.local);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
 
                     // ── Clipboard Card ──────────────────────────────────────────
                     SliverToBoxAdapter(
@@ -360,34 +310,49 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                   Text(
                                     clipboardController.history.isEmpty
                                         ? 'Nothing copied yet'
-                                        : clipboardController
-                                            .history.first.text,
-                                    maxLines: 3,
+                                        : clipboardController.history.first.text,
+                                    maxLines: 4,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 18,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontFamily: 'Courier', // Monospaced feel
                                       fontWeight: FontWeight.w600,
-                                      height: 1.3,
+                                      color: scheme.onSurface.withValues(alpha: 0.9),
+                                      height: 1.4,
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 20),
                                   Row(
                                     children: [
-                                      Text(
-                                        clipboardController.history.isEmpty
-                                            ? ''
-                                            : 'Updated just now',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: scheme.onSurface
-                                              .withValues(alpha: 0.4),
-                                        ),
+                                      _QuickAction(
+                                        icon: Icons.copy_all_rounded,
+                                        label: 'Copy',
+                                        onTap: () {
+                                          if (clipboardController.history.isNotEmpty) {
+                                            Clipboard.setData(ClipboardData(text: clipboardController.history.first.text));
+                                            HapticFeedback.mediumImpact();
+                                          }
+                                        },
                                       ),
-                                      const SizedBox(width: 8),
-                                      Icon(Icons.copy_rounded,
-                                          size: 16,
-                                          color: scheme.onSurface
-                                              .withValues(alpha: 0.6)),
+                                      const SizedBox(width: 12),
+                                      _QuickAction(
+                                        icon: Icons.ios_share_rounded,
+                                        label: 'Share',
+                                        onTap: () {
+                                          // Share logic here
+                                        },
+                                      ),
+                                      const Spacer(),
+                                      if (clipboardController.history.isNotEmpty)
+                                        _QuickAction(
+                                          icon: Icons.delete_outline_rounded,
+                                          label: 'Clear',
+                                          color: Colors.red.withValues(alpha: 0.1),
+                                          iconColor: Colors.red,
+                                          onTap: () {
+                                            clipboardController.clearHistory();
+                                          },
+                                        ),
                                     ],
                                   ),
                                 ],
@@ -420,7 +385,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                 child: ListView.separated(
                                   scrollDirection: Axis.horizontal,
                                   itemCount: appState.recentTransfers.length,
-                                  separatorBuilder: (_, ___) =>
+                                  separatorBuilder: (_, index) =>
                                       const SizedBox(width: 12),
                                   itemBuilder: (context, index) {
                                     final item =
@@ -546,12 +511,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 class _StatusHub extends StatelessWidget {
   final ConnectionStatus status;
   final String connectionType;
+  final bool modeMismatch;
   final AnimationController pulseController;
   final VoidCallback onTap;
 
   const _StatusHub({
     required this.status,
     required this.connectionType,
+    required this.modeMismatch,
     required this.pulseController,
     required this.onTap,
   });
@@ -560,59 +527,108 @@ class _StatusHub extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isConnected = status == ConnectionStatus.connected;
-    final color = isConnected ? Colors.green : (status == ConnectionStatus.connecting ? Colors.orange : scheme.primary);
+    final color = modeMismatch 
+        ? Colors.red 
+        : (isConnected ? Colors.green : (status == ConnectionStatus.connecting ? Colors.orange : scheme.primary));
 
     return GestureDetector(
       onTap: onTap,
       child: Stack(
         alignment: Alignment.center,
         children: [
+          // Radar Sweep (Only showing when not connected)
+          if (!isConnected)
+            AnimatedBuilder(
+              animation: pulseController,
+              builder: (context, child) {
+                return Transform.rotate(
+                  angle: pulseController.value * 2 * math.pi,
+                  child: Container(
+                    width: 200,
+                    height: 200,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: SweepGradient(
+                        colors: [
+                          color.withValues(alpha: 0.2),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.25, 0.25],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          
+          // Outer Glow
           AnimatedBuilder(
             animation: pulseController,
             builder: (context, child) {
               return Container(
-                width: 180 + (20 * pulseController.value),
-                height: 180 + (20 * pulseController.value),
+                width: 170 + (25 * pulseController.value),
+                height: 170 + (25 * pulseController.value),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: color.withValues(alpha: 0.1 * (1 - pulseController.value)),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.15 * (1 - pulseController.value)),
+                    width: 2,
+                  ),
                 ),
               );
             },
           ),
-          Container(
-            width: 150,
-            height: 150,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.surface,
-              boxShadow: [
-                BoxShadow(
+          
+          // Main Hub
+          GlassCard(
+            borderRadius: BorderRadius.circular(100),
+            blur: 20,
+            opacity: 0.1,
+            accent: color,
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
                   color: color.withValues(alpha: 0.2),
-                  blurRadius: 30,
-                  spreadRadius: 5,
+                  width: 2,
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isConnected ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded,
-                  size: 48,
-                  color: color,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isConnected ? connectionType.toUpperCase() : (status == ConnectionStatus.connecting ? 'CONNECTING' : 'READY'),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: color,
-                    letterSpacing: 2,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    duration: const Duration(milliseconds: 600),
+                    tween: Tween(begin: 0, end: 1),
+                    builder: (context, value, child) {
+                      return Transform.scale(
+                        scale: 0.8 + (0.2 * value),
+                        child: Icon(
+                          modeMismatch 
+                              ? Icons.sync_problem_rounded 
+                              : (isConnected ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded),
+                          size: 44,
+                          color: color,
+                        ),
+                      );
+                    },
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  Text(
+                    modeMismatch
+                        ? 'MISMATCH'
+                        : (isConnected ? connectionType.toUpperCase() : (status == ConnectionStatus.connecting ? 'CONNECTING' : 'READY')),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: color,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -687,50 +703,56 @@ class _ConnectionModeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: scheme.onSurface.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
+        color: scheme.onSurface.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: scheme.onSurface.withValues(alpha: 0.05)),
       ),
       child: Row(
         children: [
-          _buildToggleItem(context, 'Local', mode == ConnectionMode.local, () => onChanged(ConnectionMode.local)),
-          _buildToggleItem(context, 'P2P', mode == ConnectionMode.p2p, () => onChanged(ConnectionMode.p2p)),
-          _buildToggleItem(context, 'Auto', mode == ConnectionMode.auto, () => onChanged(ConnectionMode.auto)),
+          _buildToggleItem(context, 'Local', Icons.router_rounded, mode == ConnectionMode.local, () => onChanged(ConnectionMode.local)),
+          _buildToggleItem(context, 'Internet', Icons.language_rounded, mode == ConnectionMode.p2p, () => onChanged(ConnectionMode.p2p)),
+          _buildToggleItem(context, 'Smart', Icons.auto_awesome_rounded, mode == ConnectionMode.auto, () => onChanged(ConnectionMode.auto)),
         ],
       ),
     );
   }
 
-  Widget _buildToggleItem(BuildContext context, String label, bool active, VoidCallback onTap) {
+  Widget _buildToggleItem(BuildContext context, String label, IconData icon, bool active, VoidCallback onTap) {
     final scheme = Theme.of(context).colorScheme;
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.elasticOut,
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: active ? scheme.onSurface : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            color: active ? scheme.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
             boxShadow: active ? [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
+                blurRadius: 10.clamp(0, double.infinity).toDouble(),
                 offset: const Offset(0, 4),
-              )
+              ),
             ] : null,
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-              letterSpacing: 0.5,
-              color: active ? scheme.surface : scheme.onSurface.withValues(alpha: 0.5),
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: active ? scheme.primary : scheme.onSurface.withValues(alpha: 0.4)),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: active ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.4),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -814,6 +836,55 @@ class _CircleIconButton extends StatelessWidget {
           ],
         ),
         child: Icon(icon, color: scheme.onSurface.withValues(alpha: 0.6), size: 22),
+      ),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+  final Color? iconColor;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+    this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color ?? scheme.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: iconColor ?? scheme.onSurface.withValues(alpha: 0.6)),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: iconColor ?? scheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

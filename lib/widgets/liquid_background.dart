@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 class LiquidBackground extends StatefulWidget {
   final Widget child;
-  const LiquidBackground({super.key, required this.child});
+  final Color? accent;
+  const LiquidBackground({super.key, required this.child, this.accent});
 
   @override
   State<LiquidBackground> createState() => _LiquidBackgroundState();
@@ -50,7 +51,11 @@ class _LiquidBackgroundState extends State<LiquidBackground>
             animation: _controller,
             builder: (context, child) {
               return CustomPaint(
-                painter: LiquidPainter(_controller.value, isDark: isDark),
+                painter: LiquidPainter(
+                  _controller.value, 
+                  isDark: isDark, 
+                  accent: widget.accent ?? Theme.of(context).colorScheme.primary,
+                ),
                 size: Size.infinite,
               );
             },
@@ -72,7 +77,8 @@ class _LiquidBackgroundState extends State<LiquidBackground>
 class LiquidPainter extends CustomPainter {
   final double animationValue;
   final bool isDark;
-  LiquidPainter(this.animationValue, {required this.isDark});
+  final Color accent;
+  LiquidPainter(this.animationValue, {required this.isDark, required this.accent});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -136,7 +142,7 @@ class LiquidPainter extends CustomPainter {
         size.height * 0.22 + 36 * math.sin(t * 1.05),
       ),
       size.width * 0.20,
-      (isDark ? const Color(0xFFF59E0B) : const Color(0xFFFFD580)).withValues(
+      accent.withValues(
         alpha: isDark ? 0.08 : 0.07,
       ),
     );
@@ -156,7 +162,8 @@ class LiquidPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant LiquidPainter oldDelegate) =>
       oldDelegate.animationValue != animationValue ||
-      oldDelegate.isDark != isDark;
+      oldDelegate.isDark != isDark ||
+      oldDelegate.accent != accent;
 }
 
 class GridOverlayPainter extends CustomPainter {

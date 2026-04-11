@@ -31,6 +31,7 @@ class WebSocketService {
   bool get isClientConnected => _clientSocket != null && _clientSocket!.readyState == WebSocket.open;
   bool get hasServerClients => _serverClients.any((s) => s.readyState == WebSocket.open);
   bool get isConnected => isClientConnected || hasServerClients;
+  bool get isServerRunning => _server != null;
   String? get lastClientAddress => _lastClientAddress;
   int get actualPort => _actualPort ?? port;
   ConnectionStatus get statusValue => _calculateCurrentStatus();
@@ -179,6 +180,29 @@ class WebSocketService {
     _clientSocket = null;
     _clientLastSeen = null;
     _ensureHeartbeatTimer();
+  }
+
+  void disconnect() {
+    disconnectClient();
+  }
+
+  Future<void> stopServer() async {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    
+    for (final client in _serverClients.toList()) {
+      try {
+        await client.close();
+      } catch (_) {}
+    }
+    _serverClients.clear();
+    _serverLastSeen.clear();
+    
+    await _server?.close(force: true);
+    _server = null;
+    _actualPort = null;
+    _emitStatus();
+    debugPrint('WebSocketService: Local server stopped.');
   }
 
   void _handleIncoming(dynamic data, {WebSocket? socket}) {

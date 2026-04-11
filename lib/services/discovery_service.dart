@@ -10,13 +10,29 @@ class DiscoveryPeerInfo {
     required this.deviceName,
     required this.wsPort,
     required this.filePort,
-  });
+    required this.mode,
+    DateTime? lastSeen,
+  }) : lastSeen = lastSeen ?? DateTime.now();
 
   final String address;
   final String deviceId;
   final String deviceName;
   final int wsPort;
   final int filePort;
+  final String mode;
+  final DateTime lastSeen;
+
+  DiscoveryPeerInfo copyWith({DateTime? lastSeen}) {
+    return DiscoveryPeerInfo(
+      address: address,
+      deviceId: deviceId,
+      deviceName: deviceName,
+      wsPort: wsPort,
+      filePort: filePort,
+      mode: mode,
+      lastSeen: lastSeen ?? this.lastSeen,
+    );
+  }
 }
 
 class DiscoveryService {
@@ -32,6 +48,7 @@ class DiscoveryService {
     required String deviceName,
     required int wsPort,
     required int filePort,
+    required String currentMode,
     required void Function(DiscoveryPeerInfo info) onPeerFound,
   }) async {
     if (_socket != null) {
@@ -83,6 +100,7 @@ class DiscoveryService {
             final peerName = message['deviceName'] as String? ?? 'Wire Device';
             final ws = message['wsPort'] as int? ?? wsPort;
             final file = message['filePort'] as int? ?? filePort;
+            final mode = message['mode'] as String? ?? 'auto';
             onPeerFound(
               DiscoveryPeerInfo(
                 address: datagram.address.address,
@@ -90,6 +108,7 @@ class DiscoveryService {
                 deviceName: peerName,
                 wsPort: ws,
                 filePort: file,
+                mode: mode,
               ),
             );
           }
@@ -108,6 +127,7 @@ class DiscoveryService {
           'deviceName': deviceName,
           'wsPort': wsPort,
           'filePort': filePort,
+          'mode': currentMode,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
 

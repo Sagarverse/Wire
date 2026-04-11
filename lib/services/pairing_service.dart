@@ -11,6 +11,7 @@ class PairedDevice {
   final int? batteryLevel;
   final bool? isCharging;
   final int filePort;
+  final String? signalingKey;
 
   PairedDevice({
     required this.deviceId,
@@ -22,6 +23,7 @@ class PairedDevice {
     this.batteryLevel,
     this.isCharging,
     this.filePort = 5758,
+    this.signalingKey,
   });
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +36,7 @@ class PairedDevice {
         'battery': batteryLevel,
         'charging': isCharging,
         'filePort': filePort,
+        'sigKey': signalingKey,
       };
 
   factory PairedDevice.fromJson(Map<String, dynamic> json) => PairedDevice(
@@ -46,6 +49,7 @@ class PairedDevice {
         batteryLevel: json['battery'] as int?,
         isCharging: json['charging'] as bool?,
         filePort: json['filePort'] as int? ?? 5758,
+        signalingKey: json['sigKey'] as String?,
       );
 
   PairedDevice copyWith({
@@ -57,6 +61,7 @@ class PairedDevice {
     int? batteryLevel,
     bool? isCharging,
     int? filePort,
+    String? signalingKey,
   }) {
     return PairedDevice(
       deviceId: deviceId,
@@ -68,6 +73,7 @@ class PairedDevice {
       batteryLevel: batteryLevel ?? this.batteryLevel,
       isCharging: isCharging ?? this.isCharging,
       filePort: filePort ?? this.filePort,
+      signalingKey: signalingKey ?? this.signalingKey,
     );
   }
 }

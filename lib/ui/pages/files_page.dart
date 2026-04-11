@@ -79,7 +79,7 @@ class FilesPage extends StatelessWidget {
                           label: 'Send File',
                           accent: scheme.onSurface,
                           enabled: isPeerConnected,
-                          onTap: () => _pickAndSendFile(context, appState),
+                          onTap: () => _pickAndSendFile(context, appState, provider),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -319,7 +319,7 @@ class FilesPage extends StatelessWidget {
   }
 
   // ── Pick a file and send it to the active peer ──
-  void _pickAndSendFile(BuildContext context, AppState appState) async {
+  void _pickAndSendFile(BuildContext context, AppState appState, FileTransferProvider provider) async {
     try {
       final result = await FilePicker.platform.pickFiles();
       if (result == null || result.files.isEmpty) return;
@@ -333,7 +333,7 @@ class FilesPage extends StatelessWidget {
         );
       }
 
-      await appState.pushFile(filePath, provider: context.read<FileTransferProvider>());
+      await appState.pushFiles([filePath], provider: provider);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

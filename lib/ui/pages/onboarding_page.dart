@@ -421,6 +421,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 deviceId: _appState.deviceId,
                 deviceName: _appState.deviceName,
                 port: 5757,
+                mode: _appState.connectionMode.name,
               ),
             ),
             padding: const EdgeInsets.all(20),
@@ -550,6 +551,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       deviceName: data['name'],
                       wsPort: data['port'],
                       filePort: data['filePort'] ?? 5758,
+                      mode: data['mode'] ?? 'auto',
                     );
                     _appState.connectToPeer(
                       peer.address,

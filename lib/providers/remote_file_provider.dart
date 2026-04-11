@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../services/file_transfer_service.dart';
 import 'app_state.dart';
 
 class RemoteFileEntry {
@@ -29,6 +28,8 @@ class RemoteFileEntry {
   }
 }
 
+enum RemoteFileSort { name, size, date }
+
 class RemoteFileProvider extends ChangeNotifier {
   final AppState _appState;
 
@@ -39,6 +40,9 @@ class RemoteFileProvider extends ChangeNotifier {
   String? _parentPath;
   bool _isLoading = false;
   String? _error;
+  bool _isGridView = false;
+  RemoteFileSort _sortMode = RemoteFileSort.name;
+  bool _isAscending = true;
 
   // Tracking downloads: path -> progress (0.0 to 1.0, 2.0 = done, -1.0 = error)
   final Map<String, double> _downloadProgress = {};
@@ -51,9 +55,30 @@ class RemoteFileProvider extends ChangeNotifier {
     // No-op: AppState handles connection info internally
   }
 
-  List<RemoteFileEntry> get entries => _searchQuery.isEmpty 
-    ? _entries 
-    : _entries.where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+  List<RemoteFileEntry> get entries {
+    var list = _searchQuery.isEmpty 
+      ? List<RemoteFileEntry>.from(_entries) 
+      : _entries.where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
+    list.sort((a, b) {
+      if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
+      int cmp = 0;
+      switch (_sortMode) {
+        case RemoteFileSort.size:
+          cmp = a.size.compareTo(b.size);
+          break;
+        case RemoteFileSort.date:
+          cmp = a.modified.compareTo(b.modified);
+          break;
+        case RemoteFileSort.name:
+          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          break;
+      }
+      return _isAscending ? cmp : -cmp;
+    });
+    return list;
+  }
+
   String? get currentPath => _currentPath;
   String? get parentPath => _parentPath;
   bool get isLoading => _isLoading;
@@ -61,9 +86,23 @@ class RemoteFileProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   Map<String, double> get downloadProgress => _downloadProgress;
   bool get canGoBack => _pathHistory.isNotEmpty;
+  bool get isGridView => _isGridView;
+  RemoteFileSort get sortMode => _sortMode;
+  bool get isAscending => _isAscending;
 
   void setSearchQuery(String query) {
     _searchQuery = query;
+    notifyListeners();
+  }
+
+  void toggleViewMode() {
+    _isGridView = !_isGridView;
+    notifyListeners();
+  }
+
+  void setSort(RemoteFileSort mode, {bool? ascending}) {
+    _sortMode = mode;
+    if (ascending != null) _isAscending = ascending;
     notifyListeners();
   }
 
