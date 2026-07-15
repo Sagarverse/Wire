@@ -33,7 +33,6 @@ dependencies:
   desktop_drop: ^0.7.0
   # qr_flutter removed (QR feature removed)
   flutter_webrtc: ^0.12.1
-  flutter_blue_plus: ^1.16.8
   flutter_background_service: ^5.0.10
   battery_plus: ^6.1.1
   device_info_plus: ^10.1.0
@@ -47,6 +46,11 @@ dependencies:
   open_file: ^3.5.11
   desktop_multi_window: ^0.3.0
   window_manager: ^0.5.1
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+  launch_at_startup: ^0.3.1
+  package_info_plus: ^9.0.1
+  local_auth: ^3.0.1
   
 dependency_overrides:
   uuid: ^4.5.1
@@ -62,6 +66,15 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  macos:
+    generate: true
+    image_path: "assets/images/wire_icon.png"
+  image_path: "assets/images/wire_icon.png"
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -71,4 +84,4 @@ flutter:
 
   assets:
     - assets/images/wire_icon.png
-    - assets/developer_profile.jpg
+    - assets/images/wire_tray.png

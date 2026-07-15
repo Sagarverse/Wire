@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppTheme {
@@ -38,26 +39,27 @@ class AppTheme {
   static ThemeData light() {
     const scheme = ColorScheme(
       brightness: Brightness.light,
-      primary: Color(0xFF0061FF), 
+      primary: Color(0xFF0891B2),       // Vibrant Teal-Cyan
       onPrimary: Colors.white,
-      primaryContainer: Color(0xFFE0E7FF),
-      onPrimaryContainer: Color(0xFF001D6E),
-      secondary: Color(0xFF475569), 
+      primaryContainer: Color(0xFFE0F7FA),
+      onPrimaryContainer: Color(0xFF0C4A6E),
+      secondary: Color(0xFF7C3AED),     // Rich Violet accent
       onSecondary: Colors.white,
-      secondaryContainer: Color(0xFFF1F5F9),
-      onSecondaryContainer: Color(0xFF0F172A),
-      error: Color(0xFFDC2626),
+      secondaryContainer: Color(0xFFF3E8FF),
+      onSecondaryContainer: Color(0xFF4C1D95),
+      error: Color(0xFFEF4444),
       onError: Colors.white,
-      surface: Colors.white,
-      onSurface: Color(0xFF020617),
+      surface: Color(0xFFFFFFFF),
+      onSurface: Color(0xFF0F172A),
       outline: Color(0xFFE2E8F0),
-      outlineVariant: Color(0xFFCBD5E1),
-      tertiary: Color(0xFF7C3AED), 
+      outlineVariant: Color(0xFFF1F5F9),
+      tertiary: Color(0xFFF59E0B),       // Warm amber for highlights
       onTertiary: Colors.white,
+      surfaceContainerHighest: Color(0xFFF1F5F9),
     );
 
     return _baseTheme(scheme).copyWith(
-      scaffoldBackgroundColor: const Color(0xFFFFFFFF),
+      scaffoldBackgroundColor: const Color(0xFFF8FAFB),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: Color(0xFF0F172A),
@@ -70,26 +72,27 @@ class AppTheme {
   static ThemeData dark() {
     const scheme = ColorScheme(
       brightness: Brightness.dark,
-      primary: Colors.white, 
-      onPrimary: Colors.black,
-      primaryContainer: Color(0xFF161616),
-      onPrimaryContainer: Colors.white,
-      secondary: Color(0xFFA1A1AA),
-      onSecondary: Colors.black,
-      secondaryContainer: Color(0xFF111111),
-      onSecondaryContainer: Colors.white,
-      error: Color(0xFFEF4444),
-      onError: Colors.black,
-      surface: Colors.black, // True OLED Black
-      onSurface: Colors.white,
-      outline: Color(0xFF27272A),
-      outlineVariant: Color(0xFF18181B),
-      tertiary: Color(0xFF52525B), 
-      onTertiary: Colors.black,
+      primary: Color(0xFF22D3EE),       // Bright Cyan
+      onPrimary: Color(0xFF0C4A6E),
+      primaryContainer: Color(0xFF0E4D64),
+      onPrimaryContainer: Color(0xFFE0F7FA),
+      secondary: Color(0xFFA78BFA),     // Light Violet
+      onSecondary: Color(0xFF1E1B4B),
+      secondaryContainer: Color(0xFF1E1B4B),
+      onSecondaryContainer: Color(0xFFEDE9FE),
+      error: Color(0xFFFCA5A5),
+      onError: Color(0xFF000000),
+      surface: Color(0xFF0A0F1A),        // Deep navy instead of pure black
+      onSurface: Color(0xFFE8ECF4),
+      outline: Color(0xFF1A2332),
+      outlineVariant: Color(0xFF111827),
+      tertiary: Color(0xFFFBBF24),       // Warm gold
+      onTertiary: Color(0xFF000000),
+      surfaceContainerHighest: Color(0xFF111827),
     );
 
     return _baseTheme(scheme).copyWith(
-      scaffoldBackgroundColor: Colors.black, // OLED Black
+      scaffoldBackgroundColor: const Color(0xFF0A0F1A),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
@@ -101,38 +104,46 @@ class AppTheme {
 
   static ThemeData _baseTheme(ColorScheme scheme) {
     final isDark = scheme.brightness == Brightness.dark;
-    final baseText = Typography.material2021().white.apply(
-      displayColor: scheme.onSurface,
-      bodyColor: scheme.onSurface,
+    final baseText = GoogleFonts.plusJakartaSansTextTheme(
+      Typography.material2021().white.apply(
+        displayColor: scheme.onSurface,
+        bodyColor: scheme.onSurface,
+      ),
     );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
       textTheme: baseText.copyWith(
         headlineLarge: baseText.headlineLarge?.copyWith(
-          fontWeight: FontWeight.w900,
-          letterSpacing: -1.0,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1.5,
         ),
         headlineMedium: baseText.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.4,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -1.0,
         ),
         titleLarge: baseText.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
-          letterSpacing: -0.2,
+          letterSpacing: -0.5,
         ),
         titleMedium: baseText.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
+          letterSpacing: -0.2,
         ),
-        bodyMedium: baseText.bodyMedium?.copyWith(height: 1.35),
+        bodyMedium: baseText.bodyMedium?.copyWith(
+          height: 1.5,
+          letterSpacing: 0.1,
+        ),
         labelSmall: baseText.labelSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.2,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 2.0,
+          textBaseline: TextBaseline.alphabetic,
         ),
       ),
       cardTheme: CardThemeData(
-        color: isDark ? const Color(0xFF0F1A2E) : Colors.white,
+        color: isDark ? const Color(0xFF111827) : Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         shadowColor: Colors.black.withValues(alpha: 0.08),
@@ -222,8 +233,18 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? scheme.primary
+              ? Colors.white
               : scheme.outline,
+        ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? scheme.primary.withValues(alpha: 0.6)
+              : scheme.outline.withValues(alpha: 0.25),
+        ),
+        trackOutlineColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? Colors.transparent
+              : scheme.outline.withValues(alpha: 0.4),
         ),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
@@ -234,6 +255,11 @@ class AppTheme {
           TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
           TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
         },
+      ),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        elevation: 8,
+        backgroundColor: isDark ? const Color(0xFF141C2E) : Colors.white,
       ),
     );
   }
@@ -247,6 +273,14 @@ class AppTheme {
   static const Curve curveEaseOut = Curves.easeOut;
   static const Curve curveEaseInOutCubic = Curves.easeInOutCubic;
   static const Curve curveEaseOutBack = Curves.easeOutBack;
+
+  /// Shimmer color for loading states
+  static Color shimmerColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.04);
+  }
 }
 
 extension ThemeFx on BuildContext {
@@ -260,16 +294,16 @@ extension ThemeFx on BuildContext {
     final dark = Theme.of(this).brightness == Brightness.dark;
     return dark
         ? const [
-            Color(0xFF020617), 
-            Color(0xFF0F172A), 
-            Color(0xFF1E293B), 
-            Color(0xFF312E81), // Deep Indigo for color bleed
+            Color(0xFF000000), 
+            Color(0xFF0A0A0A), 
+            Color(0xFF121212), 
+            Color(0xFF1A1A1A), 
           ]
         : const [
             Color(0xFFFFFFFF), 
             Color(0xFFF8FAFC), 
-            Color(0xFFE0F2FE), // Light Blue
-            Color(0xFFF5F3FF), // Light Violet for color bleed
+            Color(0xFFF1F5F9), 
+            Color(0xFFE2E8F0), 
           ];
   }
 }

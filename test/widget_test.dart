@@ -5,17 +5,29 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:wire/main.dart';
+import 'package:flutter/material.dart';
+
+import 'package:wire/ui/widgets/qr_pairing_dialog.dart';
 
 void main() {
-  testWidgets('App launches and shows title', (WidgetTester tester) async {
-    await tester.pumpWidget(const WireApp());
+  testWidgets('QR pairing dialog renders', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: QrPairingDialog(
+            deviceId: 'device-1',
+            deviceName: 'MacBook',
+            port: 5757,
+            mode: 'auto',
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Wire Sync'), findsOneWidget);
-    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.text('Pair with your phone'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
   });
 }

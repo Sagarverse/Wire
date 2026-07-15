@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
 class LiquidBackground extends StatefulWidget {
@@ -12,62 +13,121 @@ class LiquidBackground extends StatefulWidget {
 
 class _LiquidBackgroundState extends State<LiquidBackground>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  AnimationController? _controller;
+
+  static bool get _isDesktop =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.macOS ||
+       defaultTargetPlatform == TargetPlatform.windows ||
+       defaultTargetPlatform == TargetPlatform.linux);
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat();
+    if (_isDesktop) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: 14),
+      )..repeat();
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = widget.accent ?? Theme.of(context).colorScheme.primary;
+
     return Stack(
       children: [
-        Positioned.fill(
-          child: Container(color: Theme.of(context).colorScheme.surface),
-        ),
+        // Base color
         Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: isDark ? Colors.black : const Color(0xFFF5F7FC),
+              color: isDark ? const Color(0xFF0A0F1A) : const Color(0xFFF8FAFB),
             ),
           ),
         ),
-        // ** FIX: RepaintBoundary isolates liquid animation repaints
-        // from child widget tree — prevents unnecessary child rebuilds **
-        RepaintBoundary(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return CustomPaint(
-                painter: LiquidPainter(
-                  _controller.value, 
-                  isDark: isDark, 
-                  accent: widget.accent ?? Theme.of(context).colorScheme.primary,
+
+        // Mobile: static radial gradient (lightweight, zero animation cost)
+        if (!_isDesktop)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(-0.5, -0.6),
+                    radius: 1.4,
+                    colors: isDark
+                        ? [
+                            const Color(0xFF0891B2).withValues(alpha: 0.08),
+                            Colors.transparent,
+                          ]
+                        : [
+                            const Color(0xFF0891B2).withValues(alpha: 0.06),
+                            Colors.transparent,
+                          ],
+                  ),
                 ),
-                size: Size.infinite,
-              );
-            },
-          ),
-        ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: RepaintBoundary(
-              child: CustomPaint(painter: GridOverlayPainter(isDark: isDark)),
+              ),
             ),
           ),
-        ),
+        if (!_isDesktop)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.8, 0.7),
+                    radius: 1.2,
+                    colors: isDark
+                        ? [
+                            const Color(0xFF1E293B).withValues(alpha: 0.08),
+                            Colors.transparent,
+                          ]
+                        : [
+                            const Color(0xFFE2E8F0).withValues(alpha: 0.15),
+                            Colors.transparent,
+                          ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // Desktop: animated liquid blobs
+        if (_isDesktop && _controller != null)
+          RepaintBoundary(
+            child: AnimatedBuilder(
+              animation: _controller!,
+              builder: (context, child) {
+                return CustomPaint(
+                  painter: LiquidPainter(
+                    _controller!.value,
+                    isDark: isDark,
+                    accent: accent,
+                  ),
+                  size: Size.infinite,
+                );
+              },
+            ),
+          ),
+
+        // Grid overlay (desktop only)
+        if (_isDesktop)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: RepaintBoundary(
+                child: CustomPaint(painter: GridOverlayPainter(isDark: isDark)),
+              ),
+            ),
+          ),
+
         widget.child,
       ],
     );
@@ -82,81 +142,59 @@ class LiquidPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 90);
+    final paint = Paint();
+    final t = animationValue * 2 * math.pi;
 
     void drawBlob(Offset offset, double radius, Color color) {
       paint.color = color;
       canvas.drawCircle(offset, radius, paint);
     }
 
-    final t = animationValue * 2 * math.pi;
+    paint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 80);
 
     drawBlob(
       Offset(
-        size.width * 0.12 + 48 * math.sin(t * 0.94),
-        size.height * 0.16 + 40 * math.cos(t * 0.79),
+        size.width * 0.15 + 60 * math.sin(t * 0.5),
+        size.height * 0.2 + 80 * math.cos(t * 0.4),
       ),
-      size.width * 0.42,
-      (isDark ? Colors.white : Colors.blue).withValues(
-        alpha: isDark ? 0.03 : 0.08,
+      size.width * 0.8,
+      (isDark ? const Color(0xFF121212) : const Color(0xFFF1F5F9)).withValues(
+        alpha: isDark ? 0.08 : 0.2,
       ),
     );
 
     drawBlob(
       Offset(
-        size.width * 0.82 + 46 * math.cos(t * 0.71),
-        size.height * 0.66 + 64 * math.sin(t * 0.55),
+        size.width * 0.82 + 100 * math.cos(t * 0.3),
+        size.height * 0.66 + 120 * math.sin(t * 0.2),
       ),
-      size.width * 0.5,
-      (isDark ? Colors.white : Colors.teal).withValues(
-        alpha: isDark ? 0.02 : 0.06,
-      ),
-    );
-
-    drawBlob(
-      Offset(
-        size.width * 0.48 + 34 * math.sin(t * 1.18),
-        size.height * 0.1 - 24 * math.cos(t * 0.97),
-      ),
-      size.width * 0.3,
-      (isDark ? Colors.white : Colors.purple).withValues(
-        alpha: isDark ? 0.02 : 0.05,
+      size.width * 0.7,
+      (isDark ? Colors.white : Colors.black).withValues(
+        alpha: isDark ? 0.02 : 0.04,
       ),
     );
 
     drawBlob(
       Offset(
-        size.width * 0.32 + 36 * math.sin(t * 0.62),
-        size.height * 0.82 + 24 * math.cos(t * 0.88),
+        size.width * 0.48 + 80 * math.sin(t * 0.7),
+        size.height * 0.1 - 40 * math.cos(t * 0.6),
       ),
-      size.width * 0.24,
-      (isDark ? const Color(0xFF2F98FF) : const Color(0xFFAAD0FF)).withValues(
-        alpha: isDark ? 0.18 : 0.13,
+      size.width * 0.4,
+      (isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE2E8F0)).withValues(
+        alpha: isDark ? 0.05 : 0.15,
       ),
     );
 
     drawBlob(
       Offset(
-        size.width * 0.70 + 28 * math.cos(t * 0.78),
-        size.height * 0.22 + 36 * math.sin(t * 1.05),
+        size.width * 0.3 + 90 * math.sin(t * 0.45),
+        size.height * 0.85 + 50 * math.cos(t * 0.75),
       ),
-      size.width * 0.20,
-      accent.withValues(
-        alpha: isDark ? 0.08 : 0.07,
+      size.width * 0.35,
+      (isDark ? const Color(0xFF262626) : const Color(0xFFF1F5F9)).withValues(
+        alpha: isDark ? 0.06 : 0.12,
       ),
     );
-
-    final sheen = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Colors.white.withValues(alpha: isDark ? 0.05 : 0.12),
-          Colors.white.withValues(alpha: 0),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, sheen);
   }
 
   @override

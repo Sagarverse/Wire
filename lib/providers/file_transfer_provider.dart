@@ -10,6 +10,17 @@ class FileTransferProvider extends ChangeNotifier {
   final List<TransferItem> _transfers = [];
   StreamSubscription? _progressSub;
   StreamSubscription? _completeSub;
+  bool _notifyScheduled = false;
+
+  void _scheduleNotify() {
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
+    // Throttle notifications to max once per frame/microtask
+    Future.microtask(() {
+      _notifyScheduled = false;
+      notifyListeners();
+    });
+  }
 
   FileTransferProvider({
     required FileTransferService fileTransferService,
@@ -41,7 +52,7 @@ class FileTransferProvider extends ChangeNotifier {
       final item = _transfers[index];
       item.bytesTransferred = progress.received;
       item.progress = progress.received / progress.total;
-      notifyListeners();
+      _scheduleNotify();
     } else {
       // New incoming transfer
       _transfers.insert(0, TransferItem(
@@ -55,7 +66,7 @@ class FileTransferProvider extends ChangeNotifier {
         progress: progress.received / progress.total,
         startTime: DateTime.now(),
       ));
-      notifyListeners();
+      _scheduleNotify();
     }
   }
 
@@ -71,7 +82,7 @@ class FileTransferProvider extends ChangeNotifier {
 
   void addTransfer(TransferItem item) {
     _transfers.insert(0, item);
-    notifyListeners();
+    _scheduleNotify();
   }
 
   void updateTransferProgress(String id, double progress, int bytes) {
@@ -79,7 +90,7 @@ class FileTransferProvider extends ChangeNotifier {
     if (index >= 0) {
       _transfers[index].progress = progress;
       _transfers[index].bytesTransferred = bytes;
-      notifyListeners();
+      _scheduleNotify();
     }
   }
 

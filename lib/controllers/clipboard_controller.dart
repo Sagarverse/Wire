@@ -88,6 +88,13 @@ class ClipboardController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void removeItem(int index) {
+    if (index >= 0 && index < _history.length) {
+      _history.removeAt(index);
+      notifyListeners();
+    }
+  }
+
   void clearHistory() async {
     _history.clear();
     await historyService.clearClipboardHistory();

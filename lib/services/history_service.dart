@@ -99,6 +99,10 @@ class HistoryService {
     });
   }
 
+  Future<void> removeTransfer(String id) async {
+    await _db?.delete('transfers', where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<void> clearTransferHistory() async {
     await _db?.delete('transfers');
   }

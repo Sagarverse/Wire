@@ -25,6 +25,8 @@ class FileTransferService {
   final int port;
   HttpServer? _server;
   int? _actualPort;
+  bool _isTransferring = false;
+  bool get isTransferring => _isTransferring;
   final _receiveProgress = StreamController<FileReceiveProgress>.broadcast();
   final _receiveComplete = StreamController<FileReceiveProgress>.broadcast();
 
@@ -319,6 +321,7 @@ class FileTransferService {
       client.idleTimeout = const Duration(seconds: 30);
 
       try {
+        _isTransferring = true;
         final request = await client.post(host, port, '/upload');
         request.headers.set('x-filename', filename);
         if (relativePath != null) {
@@ -353,6 +356,7 @@ class FileTransferService {
         // Exponential backoff
         await Future.delayed(Duration(seconds: 2 * attempts));
       } finally {
+        _isTransferring = false;
         client.close(force: true);
       }
     }

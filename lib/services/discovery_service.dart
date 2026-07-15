@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 class DiscoveryPeerInfo {
   DiscoveryPeerInfo({
     required this.address,
+    this.addresses = const [],
     required this.deviceId,
     required this.deviceName,
     required this.wsPort,
@@ -15,6 +16,7 @@ class DiscoveryPeerInfo {
   }) : lastSeen = lastSeen ?? DateTime.now();
 
   final String address;
+  final List<String> addresses;
   final String deviceId;
   final String deviceName;
   final int wsPort;
@@ -22,9 +24,10 @@ class DiscoveryPeerInfo {
   final String mode;
   final DateTime lastSeen;
 
-  DiscoveryPeerInfo copyWith({DateTime? lastSeen}) {
+  DiscoveryPeerInfo copyWith({DateTime? lastSeen, List<String>? addresses}) {
     return DiscoveryPeerInfo(
       address: address,
+      addresses: addresses ?? this.addresses,
       deviceId: deviceId,
       deviceName: deviceName,
       wsPort: wsPort,

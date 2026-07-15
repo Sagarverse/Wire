@@ -14,6 +14,12 @@ class WebRTCP2PService {
   bool _isConnected = false;
   bool get isConnected => _isConnected;
   
+  bool _isInitializing = false;
+  bool get isConnecting => _isInitializing || (_peerConnection != null && !_isConnected);
+  
+  bool _isTransferring = false;
+  bool get isTransferring => _isTransferring;
+  
   List<Map<String, String>> _iceServers = [
     {'urls': 'stun:stun.l.google.com:19302'},
     {'urls': 'stun:stun1.l.google.com:19302'},
@@ -23,9 +29,14 @@ class WebRTCP2PService {
     {'urls': 'stun:stun.nextcloud.com:443'},
     {'urls': 'stun:stun.cloudflare.com:3478'},
     {'urls': 'stun:stun.anyfirewall.com:3478'},
-    {'urls': 'stun:stun.stunprotocol.org:3478'},
+    {'urls': 'stun:numb.viagenie.ca:3478'},
+    {'urls': 'stun:stun.ekiga.net:3478'},
+    {'urls': 'stun:stun.ideasip.com:3478'},
+    {'urls': 'stun:stun.schlund.de:3478'},
     {'urls': 'stun:stun.voiparound.com:3478'},
     {'urls': 'stun:stun.voipstunt.com:3478'},
+    {'urls': 'stun:stun.voipbuster.com:3478'},
+    {'urls': 'stun:stun.voxgratia.org:3478'},
   ];
 
   // WebRTC
@@ -43,7 +54,11 @@ class WebRTCP2PService {
   String? _currentTargetId;
   Timer? _heartbeatTimer;
   bool _isInitialConnection = true;
-  bool _isInitializing = false;
+  final List<Map<String, dynamic>> _signalBrokers = [
+    {'host': 'broker.hivemq.com', 'port': 443, 'wss': true},
+    {'host': 'broker.hivemq.com', 'port': 1883, 'wss': false}, // Plain MQTT fallback
+  ];
+  int _currentBrokerIndex = 0;
 
   void setIceServers(List<Map<String, String>> servers) {
     _iceServers = servers;
@@ -54,36 +69,57 @@ class WebRTCP2PService {
     if (_mqttClient?.connectionStatus?.state == MqttConnectionState.connected) return;
 
     _isInitializing = true;
-    _mqttClient = MqttServerClient.withPort('broker.hivemq.com', _clientId, 8884);
-    _mqttClient!.useWebSocket = true;
-    _mqttClient!.secure = true;
-    _mqttClient!.setProtocolV311();
-    _mqttClient!.logging(on: false);
-    _mqttClient!.keepAlivePeriod = 20;
-    _mqttClient!.autoReconnect = true;
-    _mqttClient!.onDisconnected = () {
-        debugPrint('WebRTC Signaling: Secure WSS Disconnected');
-    };
-    _mqttClient!.onConnected = () {
-      debugPrint('WebRTC Signaling: MQTT Connected');
-      if (!_isInitialConnection && _myId != null) {
-        // Re-subscribe after reconnect
-        startListening(_myId!);
-      }
-      _isInitialConnection = false;
-    };
+    
+    // Try brokers in sequence
+    for (int i = 0; i < _signalBrokers.length; i++) {
+        final broker = _signalBrokers[_currentBrokerIndex];
+        debugPrint('WebRTC Signaling: Attempting connection to ${broker['host']}:${broker['port']}...');
+        
+        _mqttClient = MqttServerClient.withPort(
+          broker['host'], 
+          _clientId, 
+          broker['port']
+        );
+        _mqttClient!.useWebSocket = broker['wss'];
+        _mqttClient!.secure = broker['wss'];
+        _mqttClient!.onBadCertificate = (dynamic cert) => true; 
+        _mqttClient!.setProtocolV311();
+        _mqttClient!.logging(on: false);
+        _mqttClient!.keepAlivePeriod = 20;
+        _mqttClient!.autoReconnect = true;
+        
+        _mqttClient!.onDisconnected = () {
+            debugPrint('WebRTC Signaling: Disconnected from ${broker['host']}');
+        };
+        
+        _mqttClient!.onConnected = () {
+          debugPrint('WebRTC Signaling: Successfully connected to ${broker['host']}');
+          if (!_isInitialConnection && _myId != null) {
+            startListening(_myId!);
+          }
+          _isInitialConnection = false;
+        };
 
-    final connMess = MqttConnectMessage()
-        .withClientIdentifier(_clientId)
-        .startClean()
-        .withWillQos(MqttQos.atLeastOnce);
-    _mqttClient!.connectionMessage = connMess;
+        final connMess = MqttConnectMessage()
+            .withClientIdentifier(_clientId)
+            .startClean()
+            .withWillQos(MqttQos.atLeastOnce);
+        _mqttClient!.connectionMessage = connMess;
 
-    try {
-      await _mqttClient!.connect().timeout(const Duration(seconds: 10));
-    } catch (e) {
-      debugPrint('MQTT Connection Error: $e');
-      _mqttClient!.disconnect();
+        try {
+          await _mqttClient!.connect().timeout(const Duration(seconds: 8));
+          if (_mqttClient!.connectionStatus?.state == MqttConnectionState.connected) {
+             break; // Success!
+          }
+        } catch (e) {
+          debugPrint('WebRTC Signaling: Failed to connect to ${broker['host']}: $e');
+          _currentBrokerIndex = (_currentBrokerIndex + 1) % _signalBrokers.length;
+          _mqttClient?.disconnect();
+        }
+    }
+
+    if (_mqttClient?.connectionStatus?.state != MqttConnectionState.connected) {
+      debugPrint('WebRTC Signaling: All broker attempts failed.');
       _isInitializing = false;
       return;
     }
@@ -143,6 +179,8 @@ class WebRTCP2PService {
   Future<void> _setupWebRTC(P2PRole role) async {
     final configuration = {
       'iceServers': _iceServers,
+      'sdpSemantics': 'unified-plan',
+      'iceTransportPolicy': 'all',
     };
 
     _peerConnection = await createPeerConnection(configuration);
@@ -159,6 +197,7 @@ class WebRTCP2PService {
     };
 
     _peerConnection!.onConnectionState = (state) {
+      debugPrint('WebRTC: Connection state changed to ${state.name}');
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _isConnected = true;
         onConnectionStateChange?.call(ConnectionState.done);
@@ -170,6 +209,14 @@ class WebRTCP2PService {
         _heartbeatTimer?.cancel();
         onConnectionStateChange?.call(ConnectionState.none);
       }
+    };
+
+    _peerConnection!.onIceConnectionState = (state) {
+      debugPrint('WebRTC: ICE Connection state changed to ${state.name}');
+    };
+
+    _peerConnection!.onIceGatheringState = (state) {
+      debugPrint('WebRTC: ICE Gathering state changed to ${state.name}');
     };
 
     if (role == P2PRole.initiator) {
@@ -282,7 +329,10 @@ class WebRTCP2PService {
 
   void sendBinary(Uint8List data) {
     if (_isConnected && _dataChannel != null) {
+      _isTransferring = true;
       _dataChannel!.send(RTCDataChannelMessage.fromBinary(data));
+      // Reset after a shorter timeout or could be more advanced with data channel buffered amount
+      Timer(const Duration(milliseconds: 500), () => _isTransferring = false);
     }
   }
 

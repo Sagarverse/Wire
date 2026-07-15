@@ -214,7 +214,7 @@ class AppDelegate: FlutterAppDelegate {
           let mounted = args["mounted"] as? Bool ?? false
           DispatchQueue.main.async {
             self.isMounted = mounted
-            self.mountMenuItem?.title = mounted ? "⏏  Unmount Phone" : "📱  Mount Phone in Finder"
+            self.mountMenuItem?.title = mounted ? "Unmount phone" : "Mount phone in Finder"
           }
         }
         result(true)
@@ -266,7 +266,7 @@ class AppDelegate: FlutterAppDelegate {
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
     if let button = statusItem.button {
-      button.image = NSImage(systemSymbolName: "bolt.horizontal.fill", accessibilityDescription: "Wire")
+      button.image = NSImage(systemSymbolName: "cable.connector", accessibilityDescription: "W")
       button.image?.size = NSSize(width: 18, height: 18)
       button.image?.isTemplate = true
     }
@@ -275,16 +275,16 @@ class AppDelegate: FlutterAppDelegate {
     menu.autoenablesItems = false
 
     // ── Header ──
-    let titleItem = NSMenuItem(title: "Wire", action: nil, keyEquivalent: "")
+    let titleItem = NSMenuItem(title: "W", action: nil, keyEquivalent: "")
     titleItem.isEnabled = false
     let titleAttrs: [NSAttributedString.Key: Any] = [
       .font: NSFont.systemFont(ofSize: 13, weight: .heavy),
     ]
-    titleItem.attributedTitle = NSAttributedString(string: "⚡ Wire", attributes: titleAttrs)
+    titleItem.attributedTitle = NSAttributedString(string: "W", attributes: titleAttrs)
     menu.addItem(titleItem)
 
     // ── Connection Status ──
-    connectionMenuItem = NSMenuItem(title: "⏳  Disconnected", action: nil, keyEquivalent: "")
+    connectionMenuItem = NSMenuItem(title: "Disconnected", action: nil, keyEquivalent: "")
     connectionMenuItem.isEnabled = false
     menu.addItem(connectionMenuItem)
 
@@ -296,27 +296,29 @@ class AppDelegate: FlutterAppDelegate {
     menu.addItem(NSMenuItem.separator())
 
     // ── Show Wire ──
-    let showItem = NSMenuItem(title: "🖥  Show Wire", action: #selector(showWireWindow), keyEquivalent: "w")
+    let showItem = NSMenuItem(title: "Open W", action: #selector(showWireWindow), keyEquivalent: "w")
     showItem.keyEquivalentModifierMask = [.command, .shift]
     showItem.target = self
     menu.addItem(showItem)
 
-    // ── Mount Toggle ──
-    mountMenuItem = NSMenuItem(title: "📱  Mount Phone in Finder", action: #selector(toggleMount), keyEquivalent: "m")
+    let pairItem = NSMenuItem(title: "Open Pairing", action: #selector(showWireWindow), keyEquivalent: "p")
+    pairItem.keyEquivalentModifierMask = [.command, .shift]
+    pairItem.target = self
+    menu.addItem(pairItem)
+
+    mountMenuItem = NSMenuItem(title: "Mount phone in Finder", action: #selector(toggleMount), keyEquivalent: "m")
     mountMenuItem.keyEquivalentModifierMask = [.command, .shift]
     mountMenuItem.target = self
     menu.addItem(mountMenuItem)
 
-    // ── Open Downloads ──
-    let dlItem = NSMenuItem(title: "📁  Open Downloads", action: #selector(openWireDownloads), keyEquivalent: "d")
+    let dlItem = NSMenuItem(title: "Open downloads", action: #selector(openWireDownloads), keyEquivalent: "d")
     dlItem.keyEquivalentModifierMask = [.command, .shift]
     dlItem.target = self
     menu.addItem(dlItem)
 
     menu.addItem(NSMenuItem.separator())
 
-    // ── Find Device ──
-    let findItem = NSMenuItem(title: "🔔  Find Phone", action: #selector(findPhoneFromMenu), keyEquivalent: "f")
+    let findItem = NSMenuItem(title: "Ring paired phone", action: #selector(findPhoneFromMenu), keyEquivalent: "f")
     findItem.keyEquivalentModifierMask = [.command, .shift]
     findItem.target = self
     menu.addItem(findItem)
@@ -324,7 +326,7 @@ class AppDelegate: FlutterAppDelegate {
     menu.addItem(NSMenuItem.separator())
 
     // ── Quit ──
-    let quitItem = NSMenuItem(title: "Quit Wire", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    let quitItem = NSMenuItem(title: "Quit W", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     menu.addItem(quitItem)
 
     statusItem.menu = menu
@@ -332,24 +334,23 @@ class AppDelegate: FlutterAppDelegate {
 
   private func updateStatusBarState(connected: Bool, peerName: String?) {
     if connected {
-      connectionMenuItem?.title = "🟢  Connected"
+      connectionMenuItem?.title = "Connected"
       if let name = peerName, !name.isEmpty {
-        peerNameMenuItem?.title = "      \(name)"
+        peerNameMenuItem?.title = name
         peerNameMenuItem?.isHidden = false
       } else {
         peerNameMenuItem?.isHidden = true
       }
-      // Update status bar icon tint via template
       if let button = statusItem?.button {
-        button.image = NSImage(systemSymbolName: "bolt.horizontal.fill", accessibilityDescription: "Wire – Connected")
+        button.image = NSImage(systemSymbolName: "cable.connector", accessibilityDescription: "W connected")
         button.image?.size = NSSize(width: 18, height: 18)
         button.image?.isTemplate = true
       }
     } else {
-      connectionMenuItem?.title = "⏳  Disconnected"
+      connectionMenuItem?.title = "Disconnected"
       peerNameMenuItem?.isHidden = true
       if let button = statusItem?.button {
-        button.image = NSImage(systemSymbolName: "bolt.horizontal", accessibilityDescription: "Wire – Disconnected")
+        button.image = NSImage(systemSymbolName: "cable.connector.slash", accessibilityDescription: "W disconnected")
         button.image?.size = NSSize(width: 18, height: 18)
         button.image?.isTemplate = true
       }
@@ -365,13 +366,13 @@ class AppDelegate: FlutterAppDelegate {
     if isMounted {
       unmountPhoneInFinder(result: { _ in })
       isMounted = false
-      mountMenuItem?.title = "📱  Mount Phone in Finder"
+      mountMenuItem?.title = "Mount phone in Finder"
     } else {
       mountPhoneInFinder(result: { [weak self] success in
         if let ok = success as? Bool, ok {
           DispatchQueue.main.async {
             self?.isMounted = true
-            self?.mountMenuItem?.title = "⏏  Unmount Phone"
+            self?.mountMenuItem?.title = "Unmount phone"
           }
         }
       })

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show ConnectionState;
 import 'package:path_provider/path_provider.dart';
 import '../services/background_service.dart' show BackgroundService;
 import '../services/discovery_service.dart';
@@ -25,6 +26,10 @@ import '../services/notification_sync_service.dart';
 import 'package:path/path.dart' as p;
 import '../services/notifications_service.dart';
 import '../controllers/clipboard_controller.dart' show ClipboardController;
+import '../services/history_service.dart';
+import 'package:launch_at_startup/launch_at_startup.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 class ReceivedFile {
   final String name;
@@ -41,6 +46,7 @@ class ReceivedFile {
 }
 
 enum ConnectionMode { local, p2p, auto }
+enum ConnectionStatus { connected, syncing, connecting, disconnected, error, idle }
 
 class PairingRequest {
   final String deviceId;
@@ -67,6 +73,7 @@ class AppState extends ChangeNotifier {
   final NotificationsService notificationsService;
   final FileTransferService fileTransferService;
   final WebRTCP2PService webrtcP2PService;
+  final HistoryService historyService;
 
 
   ClipboardController? _clipboardController;
@@ -114,12 +121,16 @@ class AppState extends ChangeNotifier {
     required this.notificationsService,
     required this.fileTransferService,
     required this.webrtcP2PService,
+    required this.historyService,
   }) {
     _startPeerPruner();
   }
 
   bool _isFirstRun = true;
   bool get isFirstRun => _isFirstRun;
+
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
 
   void setFirstRun(bool value) {
     _isFirstRun = value;
@@ -134,6 +145,8 @@ class AppState extends ChangeNotifier {
 
   final List<DiscoveryPeerInfo> _discoveredPeers = [];
   List<DiscoveryPeerInfo> get discoveredPeers => List.unmodifiable(_discoveredPeers);
+
+  bool isTrusted(String id) => pairingService.isTrusted(id);
 
   // Settings
   bool _discoveryEnabled = true;
@@ -151,6 +164,12 @@ class AppState extends ChangeNotifier {
 
   String? _downloadsPath;
   String? get downloadsPath => _downloadsPath;
+
+  List<String> _localIps = [];
+  bool _isLocalAddress(String host) {
+    if (host == 'localhost' || host == '127.0.0.1' || host == '::1') return true;
+    return _localIps.contains(host);
+  }
 
   // Status
   bool _isSyncPaused = false;
@@ -189,11 +208,51 @@ class AppState extends ChangeNotifier {
   DateTime? _lastSyncAt;
   DateTime? get lastSyncAt => _lastSyncAt;
 
+  ConnectionStatus get connectionStatus {
+    final isPeerConnected = pairingService.activeDevice != null;
+    final isP2PConnected = webrtcP2PService.isConnected;
+    
+    // A device is only truly "Connected" if the signaling bridge or P2P tunnel is UP
+    final isBridgeUp = webSocketService.statusValue == ConnectionStatus.connected || isP2PConnected;
+    
+    if (!isPeerConnected || !isBridgeUp) {
+      // If we are currently trying to connect, show connecting
+      if (webSocketService.statusValue == ConnectionStatus.connecting || 
+          webSocketService.statusValue == ConnectionStatus.syncing) {
+        return ConnectionStatus.connecting;
+      }
+      return ConnectionStatus.disconnected;
+    }
+    
+    // Determining if we are actively moving data
+    final isActive = isSyncing || webrtcP2PService.isTransferring;
+    
+    if (isActive) return ConnectionStatus.syncing;
+    return ConnectionStatus.connected;
+  }
+
   // RPC for Remote Browsing over P2P
   final Map<String, Completer<Map<String, dynamic>>> _pendingRpc = {};
 
-  ConnectionStatus _lastStatus = ConnectionStatus.idle;
-  ConnectionStatus get lastStatus => _lastStatus;
+  ConnectionStatus _localStatus = ConnectionStatus.disconnected;
+  ConnectionStatus _p2pStatus = ConnectionStatus.idle;
+  
+  ConnectionStatus get lastStatus {
+    if (_connectionMode == ConnectionMode.local) return _localStatus;
+    if (_connectionMode == ConnectionMode.p2p) return _p2pStatus;
+    
+    // Auto mode: show connected if either is connected
+    if (_localStatus == ConnectionStatus.connected || _p2pStatus == ConnectionStatus.connected) {
+      return ConnectionStatus.connected;
+    }
+    if (_localStatus == ConnectionStatus.connecting || _p2pStatus == ConnectionStatus.connecting) {
+      return ConnectionStatus.connecting;
+    }
+    if (_localStatus == ConnectionStatus.error || _p2pStatus == ConnectionStatus.error) {
+       return ConnectionStatus.error;
+    }
+    return ConnectionStatus.disconnected;
+  }
 
   ConnectionMode _connectionMode = ConnectionMode.auto;
   ConnectionMode get connectionMode => _connectionMode;
@@ -210,6 +269,18 @@ class AppState extends ChangeNotifier {
     return '';
   }
 
+  bool get isSyncing => fileTransferService.isTransferring || webrtcP2PService.isTransferring;
+
+  bool _launchAtStartupEnabled = false;
+  bool get launchAtStartupEnabled => _launchAtStartupEnabled;
+
+  bool _biometricLockEnabled = false;
+  bool get biometricLockEnabled => _biometricLockEnabled;
+  bool _isAuthenticated = false;
+  bool get isAuthenticated => _isAuthenticated;
+
+  final LocalAuthentication _auth = LocalAuthentication();
+
   String _userName = 'Guest';
   String get userName => _userName;
 
@@ -218,6 +289,8 @@ class AppState extends ChangeNotifier {
 
   final List<ReceivedFile> _recentTransfers = [];
   List<ReceivedFile> get recentTransfers => List.unmodifiable(_recentTransfers);
+
+
 
   String? get errorMessage => webSocketService.errorMessage;
 
@@ -263,6 +336,8 @@ class AppState extends ChangeNotifier {
 
     _deviceId = initResults[0] as String;
     _deviceName = (initResults[1] as String?) ?? 'Unknown Device';
+    debugPrint('AppState: My Device ID: $_deviceId');
+    debugPrint('AppState: My Device Name: $_deviceName');
     
     if (pairingService.devices.isNotEmpty) {
       _isFirstRun = false;
@@ -276,10 +351,28 @@ class AppState extends ChangeNotifier {
     _labsMountFinderEnabled = prefs.getBool('labs_mount_finder_enabled') ?? true;
     _isSyncPaused = prefs.getBool('sync_paused') ?? false;
     _p2pEnabled = prefs.getBool('p2p_enabled') ?? false;
+    _launchAtStartupEnabled = prefs.getBool('launch_at_startup') ?? false;
     _connectionMode = ConnectionMode.values[(prefs.getInt('connection_mode') ?? 2).clamp(0, 2)];
     _userName = prefs.getString('user_name') ?? 'Guest';
-    _userAvatar = prefs.getString('user_avatar');
     _downloadsPath = prefs.getString('downloads_path');
+    _biometricLockEnabled = prefs.getBool('biometric_lock_enabled') ?? false;
+
+    // Pre-calculate local IPs for self-connection filtering
+    await _updateLocalIps();
+
+    // Load recent transfers from history
+    try {
+      final history = await historyService.getTransferHistory();
+      _recentTransfers.clear();
+      _recentTransfers.addAll(history.take(5).map((t) => ReceivedFile(
+        name: t.name,
+        path: t.path,
+        size: t.total,
+        timestamp: t.startTime ?? DateTime.now(),
+      )));
+    } catch (e) {
+      debugPrint('AppState: Failed to load history: $e');
+    }
 
     // Start network services based on strict isolation mode
     final List<Future> initializers = [];
@@ -301,7 +394,9 @@ class AppState extends ChangeNotifier {
       debugPrint('Service Initialization Error: $e');
     });
 
-    fileTransferService.receiveComplete.listen((progress) {
+    // Single unified listener for file receive completion
+    fileTransferService.receiveComplete.listen((progress) async {
+      // Update recent transfers
       _recentTransfers.insert(0, ReceivedFile(
         name: progress.name,
         path: progress.path,
@@ -309,7 +404,60 @@ class AppState extends ChangeNotifier {
         timestamp: DateTime.now(),
       ));
       if (_recentTransfers.length > 5) _recentTransfers.removeLast();
+      
+      // Track last received file for popup UI
+      _lastReceivedFile = progress;
+      
+      // Persist to history
+      await historyService.saveTransfer(TransferItem(
+        id: progress.path,
+        name: progress.name,
+        total: progress.total,
+        direction: 'receive',
+        path: progress.path,
+        status: 'complete',
+        progress: 1.0,
+        bytesTransferred: progress.total,
+        startTime: DateTime.now(),
+      ));
+
+      updateLastSync();
+      
+      // On macOS, spawn a dedicated native window for the received file
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+        try {
+          final window = await WindowController.create(WindowConfiguration(
+            arguments: jsonEncode({
+              'type': 'received_file',
+              'name': progress.name,
+              'path': progress.path,
+              'size': progress.total,
+              'sender': pairingService.activeDevice?.name ?? 'Nearby Device',
+            }),
+          ));
+          window.show();
+        } catch (e) {
+          debugPrint('Failed to spawn received file window: $e');
+        }
+      }
+      
+      // Show system notification
+      await notificationsService.showNotification(
+        title: 'File received',
+        body: '${progress.name} saved to Downloads',
+        payload: 'file:${progress.path}',
+      );
+
       _scheduleNotify();
+    });
+
+    fileTransferService.receiveProgress.listen((progress) {
+       final service = FlutterBackgroundService();
+       service.invoke('updateProgress', {
+         'content': 'Receiving ${progress.name}...',
+         'progress': progress.received,
+         'total': progress.total,
+       });
     });
 
     if (_discoveryEnabled) {
@@ -319,19 +467,35 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     webSocketService.status.listen((status) {
-      final prev = _lastStatus;
-      _lastStatus = status;
-      if (status == ConnectionStatus.connected) {
-        _reconnectAttempts = 0;
-        _reconnectTimer?.cancel();
-        _reconnectTimer = null;
-        _sendIdentity();
-      } else if ((status == ConnectionStatus.disconnected || status == ConnectionStatus.error) && prev == ConnectionStatus.connected) {
-        _startAutoReconnect();
-      }
+      final prev = _localStatus;
+      _localStatus = status;
       _scheduleNotify();
       _updateMacStatusBar();
+      
+      // Trigger auto-reconnect when WebSocket disconnects unexpectedly
+      if (status == ConnectionStatus.disconnected && 
+          prev == ConnectionStatus.connected &&
+          _autoConnectEnabled &&
+          pairingService.activeDevice != null) {
+        _startAutoReconnect();
+      }
     });
+
+    webrtcP2PService.onConnectionStateChange = (state) {
+      final prev = _p2pStatus;
+      _p2pStatus = switch (state) {
+        ConnectionState.active || ConnectionState.done => ConnectionStatus.connected,
+        ConnectionState.waiting => ConnectionStatus.connecting,
+        _ => ConnectionStatus.disconnected,
+      };
+      
+      if (_p2pStatus == ConnectionStatus.connected && prev != ConnectionStatus.connected) {
+         _sendIdentity();
+      }
+      
+      _scheduleNotify();
+      _updateMacStatusBar();
+    };
 
     webSocketService.messages.listen(_handleMessage);
     webrtcP2PService.onMessageReceived = (text) {
@@ -360,32 +524,7 @@ class AppState extends ChangeNotifier {
        }
     });
 
-    fileTransferService.receiveComplete.listen((progress) async {
-      _lastReceivedFile = progress;
-      _scheduleNotify();
-      
-      // On macOS, spawn a dedicated native window for the received file
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
-        try {
-          final window = await WindowController.create(WindowConfiguration(
-            arguments: jsonEncode({
-              'name': progress.name,
-              'path': progress.path,
-              'size': progress.total,
-            }),
-          ));
-          window.show();
-        } catch (e) {
-          debugPrint('Failed to spawn received file window: $e');
-        }
-      }
-
-      // Show local notification
-      notificationsService.showNotification(
-        title: 'File Received',
-        body: '${progress.name} has been saved.',
-      );
-    });
+    // NOTE: receiveComplete listener is unified above — no duplicate here
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       notificationSyncService.onNotificationReceived.listen((notif) {
@@ -404,23 +543,30 @@ class AppState extends ChangeNotifier {
     _setupAudioBridge();
     _setupStatusBarChannel();
     _updateMacStatusBar();
+    
+    _isInitialized = true;
+    notifyListeners();
   }
 
   Future<void> initiateConnection(DiscoveryPeerInfo peer) async {
     try {
-      _lastStatus = ConnectionStatus.connecting;
+      _localStatus = ConnectionStatus.connecting;
+      _p2pStatus = ConnectionStatus.connecting;
       _scheduleNotify();
       
       if (_connectionMode == ConnectionMode.p2p) {
         // Force P2P handshake
-        await webrtcP2PService.initiateConnection(_deviceId, peer.deviceId);
+        await webrtcP2PService.initiateConnection(_deviceId, peer.deviceId).timeout(const Duration(seconds: 10));
       } else {
         // Try local WebSocket first
-        await webSocketService.connectToPeer(peer.address);
+        await webSocketService.connectToPeer(peer.address).timeout(const Duration(seconds: 8));
       }
     } catch (e) {
-      _lastStatus = ConnectionStatus.error;
+      debugPrint('AppState: Connection failure: $e');
+      _localStatus = ConnectionStatus.error;
+      _p2pStatus = ConnectionStatus.error;
       _scheduleNotify();
+      // Don't rethrow - we want to handle it gracefully in the UI
     }
   }
 
@@ -474,7 +620,7 @@ class AppState extends ChangeNotifier {
     // Legacy status bar update replaced by comprehensive TrayService
     // Still kept for any native plugins that might depend on it
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) return;
-    final connected = _lastStatus == ConnectionStatus.connected &&
+    final connected = lastStatus == ConnectionStatus.connected &&
         pairingService.activeDevice != null;
     final peerName = pairingService.activeDevice?.name;
     final battery = connected ? (pairingService.activeDevice?.batteryLevel ?? _remoteBattery) : null;
@@ -492,9 +638,11 @@ class AppState extends ChangeNotifier {
       'mode': _connectionMode.name,
       'paused': _isSyncPaused,
       'discovery': _discoveryEnabled,
-      'clipboardEnabled': !_isSyncPaused, // Tied to pause state for now
+      'clipboardEnabled': !_isSyncPaused,
       'focusMode': _localFocusMode,
-      'connected': _lastStatus == ConnectionStatus.connected && pairingService.activeDevice != null,
+      'connected': lastStatus == ConnectionStatus.connected && pairingService.activeDevice != null,
+      'trusted': pairingService.activeDevice?.isTrusted ?? false,
+      'isSyncing': fileTransferService.isTransferring || webrtcP2PService.isTransferring,
       'peerName': pairingService.activeDevice?.name,
       'battery': pairingService.activeDevice?.batteryLevel ?? _remoteBattery,
       'batteryCharging': pairingService.activeDevice?.isCharging ?? _remoteIsCharging,
@@ -505,6 +653,7 @@ class AppState extends ChangeNotifier {
         'address': p.address,
         'wsPort': p.wsPort,
         'filePort': p.filePort,
+        'isTrusted': pairingService.isTrusted(p.deviceId),
       }).toList(),
       'clipboardHistory': _clipboardController?.history.map((e) => e.text).toList() ?? [],
       'recentTransfers': _recentTransfers.map((t) => {
@@ -581,9 +730,25 @@ class AppState extends ChangeNotifier {
           });
         }
         break;
+      case 'trust':
+        if (args is String) trustDevice(args);
+        break;
+      case 'untrust':
+        if (args is String) untrustDevice(args);
+        break;
       case 'quit':
         exit(0);
     }
+  }
+
+  Future<void> trustDevice(String id) async {
+    await pairingService.setTrusted(id, true);
+    _scheduleNotify();
+  }
+
+  Future<void> untrustDevice(String id) async {
+    await pairingService.setTrusted(id, false);
+    _scheduleNotify();
   }
 
   void _updateMacMountStatus() {
@@ -638,13 +803,15 @@ class AppState extends ChangeNotifier {
         final isCharging = message['isCharging'] == true;
         setRemoteStatus(battery, isCharging);
       } else if (type == 'sync_notification') {
-        final title = message['title']?.toString() ?? 'Notification';
-        final body = message['body']?.toString() ?? '';
-        notificationsService.showNotification(
-          title: title,
-          body: body,
-          category: NotificationCategory.system,
-        );
+        if (_notificationSyncEnabled) {
+          final title = message['title']?.toString() ?? 'Notification';
+          final body = message['body']?.toString() ?? '';
+          notificationsService.showNotification(
+            title: title,
+            body: body,
+            category: NotificationCategory.system,
+          );
+        }
       } else if (type == 'clipboard') {
         if (!_isSyncPaused) {
           final text = message['text']?.toString();
@@ -706,6 +873,9 @@ class AppState extends ChangeNotifier {
           await _prepareP2PReceive(name, size);
       } else if (type == 'p2p_transfer_end') {
           await _finalizeP2PReceive();
+      } else if (type == 'unpair') {
+          debugPrint('AppState: Peer unpairing. Terminating session.');
+          await disconnect();
       }
     } on PlatformException catch (e) {
       if (e.code == 'ACCESSIBILITY_REQUIRED' && !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
@@ -884,22 +1054,30 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('connection_mode', mode.index);
     
-    debugPrint('AppState: Mode changed to ${mode.name}. Enforcing strict isolation.');
+    debugPrint('AppState: Mode changed to ${mode.name}.');
 
-    // Strict Isolation: If switching to P2P mode, disconnect local WebSocket.
-    // If switching to Local mode, disconnect P2P internet tunnel.
     if (mode == ConnectionMode.p2p) {
+      // P2P only: shut down local services, use only WebRTC
       await webSocketService.stopServer();
+      webSocketService.disconnect(); 
       await fileTransferService.stopServer();
-      await webrtcP2PService.initialize(); // Ensure signaling is ON for P2P
+      await webrtcP2PService.initialize(); 
+      if (_deviceId.isNotEmpty) {
+        await webrtcP2PService.startListening(_deviceId);
+      }
     } else if (mode == ConnectionMode.local) {
+      // Local only: shut down P2P, use only WebSocket
       webrtcP2PService.disconnect();
       if (!webSocketService.isServerRunning) await webSocketService.startServer();
       if (!fileTransferService.isServerRunning) await fileTransferService.startServer();
-    } else if (mode == ConnectionMode.auto) {
+    } else {
+      // Auto mode: ensure BOTH local and P2P are available
       if (!webSocketService.isServerRunning) await webSocketService.startServer();
       if (!fileTransferService.isServerRunning) await fileTransferService.startServer();
       await webrtcP2PService.initialize();
+      if (_deviceId.isNotEmpty) {
+        await webrtcP2PService.startListening(_deviceId);
+      }
     }
     
     // Refresh discovery broadcast with the new mode
@@ -927,7 +1105,23 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> removeSavedDevice(String deviceId) async {
+    final isActive = pairingService.activeDevice?.deviceId == deviceId;
+    if (isActive) {
+      debugPrint('AppState: Active device removed, forcing synchronized unpair');
+      sendMessage({'type': 'unpair', 'from': _deviceId});
+      await disconnect();
+    }
     await pairingService.removeDevice(deviceId);
+    notifyListeners();
+  }
+
+  Future<void> clearAllPairings() async {
+    debugPrint('AppState: Clearing all pairings');
+    sendMessage({'type': 'unpair', 'from': _deviceId});
+    await disconnect();
+    for (final device in List.from(pairingService.devices)) {
+      await pairingService.removeDevice(device.deviceId);
+    }
     notifyListeners();
   }
 
@@ -1016,10 +1210,8 @@ class AppState extends ChangeNotifier {
         }
 
         if (_autoConnectEnabled && pairingService.isTrusted(info.deviceId)) {
-          // Additional safety: never auto-connect to loopback
-          // AND respect connectionMode: if P2P mode is selected, don't auto-connect locally
-          if (info.address != '127.0.0.1' && _connectionMode != ConnectionMode.p2p) {
-            webSocketService.connectToPeer(info.address, portOverride: info.wsPort);
+          if (!_isLocalAddress(info.address) && _connectionMode != ConnectionMode.p2p) {
+            connectToPeer(info.address, targetId: info.deviceId, targetName: info.deviceName);
           }
         }
       },
@@ -1036,6 +1228,15 @@ class AppState extends ChangeNotifier {
     _scheduleNotify();
   }
 
+  Future<void> _updateLocalIps() async {
+    try {
+      _localIps = await getLocalIps();
+      debugPrint('AppState: Discovered Local IPs: $_localIps');
+    } catch (_) {
+      _localIps = [];
+    }
+  }
+
   Future<List<String>> getLocalIps() async {
     final interfaces = await NetworkInterface.list();
     return interfaces
@@ -1046,68 +1247,142 @@ class AppState extends ChangeNotifier {
   }
 
 
-  Future<void> connectToPeer(String host, {String? targetName, String? targetId}) async {
-    if (host.isEmpty) return;
+  Future<void> connectToPeer(dynamic hostOrHosts, {String? targetName, String? targetId}) async {
+    if (!_isInitialized) return;
+    if (targetId == _deviceId && _deviceId.isNotEmpty) {
+      debugPrint('AppState: Ignoring self-connection request for deviceId: $_deviceId');
+      return;
+    }
+    
+    final List<String> hosts = (hostOrHosts is List) 
+        ? hostOrHosts.map((e) => e.toString()).toList() 
+        : [hostOrHosts.toString()];
+    
+    if (hosts.isEmpty || hosts.every((h) => h.isEmpty)) return;
+    
     _isPairingInProgress = true;
     _reconnectAttempts = 0;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    
+    notifyListeners(); // Show connecting state
 
-    await webSocketService.connectToPeer(host);
-    _sendIdentity();
-    BackgroundService.savePeerHost(host);
+    bool success = false;
+    String? successfulHost;
 
-    Future.delayed(const Duration(seconds: 30), () {
-      _isPairingInProgress = false;
-    });
-
-    if (targetId != null && pairingService.isTrusted(targetId)) {
-      pairingService.setActiveDevice(targetId);
-      notifyListeners();
-    }
-  }
-
-  Future<void> reconnect() async {
-    final active = pairingService.activeDevice;
-    if (active == null || active.deviceId == _deviceId) return;
-
-    if (_connectionMode == ConnectionMode.p2p) {
-      debugPrint('AppState: Strict P2P mode active. Connecting via Internet...');
-      await webrtcP2PService.initiateConnection(_deviceId, active.deviceId);
-      return;
-    }
-
-    if (_connectionMode == ConnectionMode.local) {
-      debugPrint('AppState: Strict Local mode active. Connecting via Wi-Fi...');
-      if (active.lastIp.isEmpty) {
-        debugPrint('AppState: No local IP available for active device.');
-        return;
+    for (final host in hosts) {
+      if (host.isEmpty || _isLocalAddress(host)) {
+        if (host.isNotEmpty) debugPrint('AppState: Skipping self-connection attempt to local address: $host');
+        continue;
       }
-      _reconnectAttempts = 0;
       try {
-        await webSocketService.connectToPeer(active.lastIp);
-        _sendIdentity();
-      } catch (_) {
-        _startAutoReconnect();
-      }
-      return;
-    }
-
-    // ConnectionMode.auto logic (Smart Sync)
-    debugPrint('AppState: Smart Sync active. Trying Local then P2P...');
-    if (active.lastIp.isNotEmpty) {
-      try {
-        debugPrint('AppState: Attempting local auto-reconnect to ${active.lastIp}');
-        await webSocketService.connectToPeer(active.lastIp).timeout(const Duration(seconds: 3));
-        _sendIdentity();
-        return;
+        debugPrint('AppState: Attempting connection to $host...');
+        await webSocketService.connectToPeer(host).timeout(const Duration(seconds: 4));
+        success = true;
+        successfulHost = host;
+        break;
       } catch (e) {
-        debugPrint('AppState: Local auto-reconnect failed, falling back to P2P/Internet');
+        debugPrint('AppState: Connection to $host failed: $e');
       }
     }
     
-    // Fallback to P2P
-    await webrtcP2PService.initiateConnection(_deviceId, active.deviceId);
+    if (success && successfulHost != null) {
+      _sendIdentity();
+      BackgroundService.savePeerHost(successfulHost);
+      
+      if (targetId != null) {
+        final existing = pairingService.devices.any((d) => d.deviceId == targetId);
+        if (existing) {
+          await pairingService.setActiveDevice(targetId);
+        }
+      }
+    } else {
+      debugPrint('AppState: All connection attempts failed.');
+      // Ensure we don't stay in "connecting" state
+      await webSocketService.disconnectClient();
+    }
+
+    _isPairingInProgress = false;
+    notifyListeners();
+  }
+
+  Future<void> disconnect() async {
+    await webSocketService.disconnect();
+    await pairingService.setActiveDevice(null);
+    _localStatus = ConnectionStatus.disconnected;
+    _p2pStatus = ConnectionStatus.disconnected;
+    notifyListeners();
+  }
+
+  Future<void> reconnect() async {
+    if (!_isInitialized) return;
+    final active = pairingService.activeDevice;
+    if (active == null || (active.deviceId == _deviceId && _deviceId.isNotEmpty)) return;
+
+    // Only attempt automatic reconnection for trusted devices
+    if (!pairingService.isTrusted(active.deviceId)) {
+      debugPrint('AppState: Auto-reconnect skipped for untrusted device: ${active.name}');
+      _scheduleNotify();
+      return;
+    }
+
+    if (webSocketService.statusValue == ConnectionStatus.connected) return;
+    if (webSocketService.statusValue == ConnectionStatus.connecting && _reconnectAttempts > 0) return;
+
+    _reconnectAttempts++;
+    if (_reconnectAttempts > 8) {
+      debugPrint('AppState: Max reconnection attempts reached. Stopping auto-reconnect.');
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      await webSocketService.disconnectClient();
+      notifyListeners();
+      return;
+    }
+
+    debugPrint('AppState: Reconnecting to ${active.name} (ID: ${active.deviceId}, IP: ${active.lastIp}) (Attempt $_reconnectAttempts)...');
+    
+    bool connectionSuccess = false;
+    
+    // 1. Try Local Link if available
+    if (active.lastIp.isNotEmpty && !_isLocalAddress(active.lastIp)) {
+      try {
+        await webSocketService.connectToPeer(active.lastIp).timeout(const Duration(seconds: 4));
+        connectionSuccess = true;
+      } catch (e) {
+        debugPrint('AppState: Local reconnect attempt failed: $e');
+      }
+    }
+
+    // 2. Fallback to P2P if enabled and local failed
+    if (!connectionSuccess && _p2pEnabled) {
+      debugPrint('AppState: Local failed, trying P2P/Internet fallback...');
+      await webrtcP2PService.initiateConnection(_deviceId, active.deviceId);
+      // P2P is async/event-driven, we don't await success here.
+      // But we prevent the reconnect loop from firing too fast.
+    }
+
+    if (connectionSuccess) {
+      _reconnectAttempts = 0;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _sendIdentity();
+    } else {
+      if (_reconnectTimer == null && _autoConnectEnabled) {
+        // Backoff: wait longer between attempts as they fail
+        final delay = Duration(seconds: (10 + (_reconnectAttempts * 5)).clamp(10, 60));
+        _reconnectTimer = Timer(delay, () {
+          _reconnectTimer = null;
+          reconnect();
+        });
+      }
+      
+      // If we failed after several tries, clear the "connecting" state so the UI isn't stuck
+      if (_reconnectAttempts >= 3 && !webrtcP2PService.isConnecting) {
+        await webSocketService.disconnectClient();
+      }
+    }
+    
+    notifyListeners();
   }
 
   void handoffUrl(String url) {
@@ -1153,6 +1428,33 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteReceivedFile(String filePath, {String? transferId}) async {
+    try {
+      final file = File(filePath);
+      if (await file.exists()) {
+        await file.delete();
+        debugPrint('AppState: File deleted from disk: $filePath');
+      }
+
+      if (transferId != null) {
+        await historyService.removeTransfer(transferId);
+      } else {
+        // Fallback: search for entry by path
+        final history = await historyService.getTransferHistory();
+        final entry = history.firstWhere((t) => t.path == filePath, orElse: () => TransferItem(id: '', name: '', total: 0, direction: '', path: '', status: '', progress: 0));
+        if (entry.id.isNotEmpty) {
+          await historyService.removeTransfer(entry.id);
+        }
+      }
+
+      _recentTransfers.removeWhere((t) => t.path == filePath);
+      _scheduleNotify();
+      notificationsService.showNotification(title: 'File Deleted', body: 'The file has been permanently removed.');
+    } catch (e) {
+      debugPrint('Error deleting file: $e');
+    }
+  }
+
   Future<void> openFileLocation(String filePath) async {
     try {
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
@@ -1188,9 +1490,23 @@ class AppState extends ChangeNotifier {
           host: active.lastIp,
           port: active.filePort,
           onProgress: (sent, total, currentFile) {
+            final service = FlutterBackgroundService();
+            service.invoke('updateProgress', {
+              'content': 'Sending files...',
+              'progress': sent,
+              'total': total,
+            });
             _scheduleNotify();
           },
         );
+        
+        final service = FlutterBackgroundService();
+        service.invoke('updateProgress', {
+          'content': 'Transfer Complete',
+          'progress': 100,
+          'total': 100,
+        });
+
         notificationsService.showNotification(
           title: 'Transfer Complete',
           body: 'Successfully sent ${filePaths.length} items',
@@ -1337,6 +1653,13 @@ class AppState extends ChangeNotifier {
       startTime: DateTime.now(),
     ));
     
+    final service = FlutterBackgroundService();
+    service.invoke('updateProgress', {
+      'content': 'Sending $name via Internet...',
+      'progress': 0,
+      'total': size,
+    });
+    
     sendMessage({
       'type': 'p2p_transfer_start',
       'name': name,
@@ -1353,6 +1676,12 @@ class AppState extends ChangeNotifier {
       sent += chunk.length;
       provider?.updateTransferProgress(transferId, sent / size, sent);
       
+      service.invoke('updateProgress', {
+         'content': 'Sending $name...',
+         'progress': sent,
+         'total': size,
+      });
+
       // In a real high-throughput scenario, we'd wait for an ACK or throttle
       // But WebRTC data channel handles some flow control
       await Future.delayed(const Duration(milliseconds: 5));
@@ -1360,6 +1689,80 @@ class AppState extends ChangeNotifier {
     
     sendMessage({'type': 'p2p_transfer_end'});
     provider?.updateTransferStatus(transferId, 'complete');
+    
+    service.invoke('updateProgress', {
+       'content': 'Transfer Complete',
+       'progress': 100,
+       'total': 100,
+    });
     _scheduleNotify();
+  }
+
+  Future<void> toggleLaunchAtStartup(bool value) async {
+    _launchAtStartupEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('launch_at_startup', value);
+    
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+      if (value) {
+        await launchAtStartup.enable();
+      } else {
+        await launchAtStartup.disable();
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> setBiometricLock(bool value) async {
+    _biometricLockEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometric_lock_enabled', value);
+    notifyListeners();
+  }
+
+  Future<bool> authenticate() async {
+    if (!_biometricLockEnabled) {
+      _isAuthenticated = true;
+      notifyListeners();
+      return true;
+    }
+
+    try {
+      final bool canAuthenticateWithBiometrics = await _auth.canCheckBiometrics;
+      final bool canAuthenticate = canAuthenticateWithBiometrics || await _auth.isDeviceSupported();
+
+      if (!canAuthenticate) {
+        _isAuthenticated = true; // Fallback if not supported
+        notifyListeners();
+        return true;
+      }
+
+      final bool didAuthenticate = await _auth.authenticate(
+        localizedReason: 'Please authenticate to access Wire Sync',
+      );
+
+      _isAuthenticated = didAuthenticate;
+      notifyListeners();
+      return _isAuthenticated;
+    } catch (e) {
+      debugPrint('Biometric authentication error: $e');
+      return false;
+    }
+  }
+
+  Future<void> clearHistory() async {
+    try {
+      await historyService.clearTransferHistory();
+      _recentTransfers.clear();
+      _lastReceivedFile = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('AppState: Error clearing history: $e');
+    }
+  }
+
+  void logout() {
+    _isAuthenticated = false;
+    notifyListeners();
   }
 }

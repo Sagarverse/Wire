@@ -1,171 +1,170 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
+import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
-import '../../providers/app_state.dart';
+
 import '../../controllers/clipboard_controller.dart';
-import '../widgets/glass_card.dart';
-import '../widgets/staggered_animated_item.dart';
+import '../../providers/app_state.dart';
+import '../../providers/file_transfer_provider.dart';
 import '../../widgets/liquid_background.dart';
+import '../../widgets/wire_logo.dart';
 import 'device_pairing_page.dart';
 import 'remote_file_manager_page.dart';
 
 class ControlHubPage extends StatelessWidget {
   final EdgeInsets? padding;
+
   const ControlHubPage({super.key, this.padding});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Consumer2<AppState, ClipboardController>(
-      builder: (context, appState, clipboardController, _) {
-        final isPeerConnected = appState.pairingService.activeDevice != null;
+    return Consumer3<AppState, ClipboardController, FileTransferProvider>(
+      builder: (context, appState, clipboardController, fileTransferProvider, _) {
+        final active = appState.pairingService.activeDevice;
+        final isConnected = appState.connectionStatus == ConnectionStatus.connected ||
+            appState.connectionStatus == ConnectionStatus.syncing;
+        final isConnecting = appState.connectionStatus == ConnectionStatus.connecting;
+        final scheme = Theme.of(context).colorScheme;
 
         return LiquidBackground(
-          child: SingleChildScrollView(
-            padding:
-                (padding ??
-                        const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 24,
-                        ))
-                    .add(const EdgeInsets.only(top: 40)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 50),
-                Text(
-                  'CONTROL HUB',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onSurface.withValues(alpha: 0.5),
-                    letterSpacing: 4.0,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Connected Center',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onSurface,
-                    letterSpacing: -1.2,
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                // ── Row 0: Send File + Clipboard Sync ──────────────────────
-                StaggeredAnimatedItem(
-                  index: 0,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _buildBentoCard(
-                          scheme: scheme,
-                          title: 'Send File',
-                          subtitle: isPeerConnected
-                              ? 'Pick & send'
-                              : 'Connect first',
-                          icon: Icons.file_upload_rounded,
-                          accent: scheme.tertiary,
-                          height: 140,
-                          onTap: isPeerConnected
-                              ? () => _pickAndSend(context, appState)
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildClipboardCard(
-                          context: context,
-                          scheme: scheme,
-                          clipboardController: clipboardController,
-                          height: 140,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // ── Row 1: Remote Files + Device Link ──────────────────────
-                StaggeredAnimatedItem(
-                  index: 1,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _buildBentoCard(
-                          scheme: scheme,
-                          title: 'Remote Files',
-                          subtitle: isPeerConnected
-                              ? 'Browse storage'
-                              : 'Connect Peer',
-                          icon: Icons.folder_shared_rounded,
-                          accent: scheme.onSurface,
-                          height: 160,
-                          onTap: isPeerConnected
-                              ? () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const RemoteFileManagerPage(),
-                                  ),
-                                )
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildBentoCard(
-                          scheme: scheme,
-                          title: 'Device Link',
-                          subtitle: isPeerConnected ? 'Paired' : 'Pair now',
-                          icon: Icons.phonelink_lock_rounded,
-                          accent: scheme.onSurface,
-                          height: 160,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => DevicePairingPage(
-                                pairingService: appState.pairingService,
-                                discoveredPeers: appState.discoveredPeers,
-                                localDeviceId: appState.deviceId,
-                                onMakeActive: (device) =>
-                                    appState.connectToPeer(
-                                      device.lastIp,
-                                      targetId: device.deviceId,
-                                    ),
-                                onConnectToPeer: (peer) =>
-                                    appState.connectToPeer(
-                                      peer.address,
-                                      targetId: peer.deviceId,
-                                    ),
+          child: SafeArea(
+            bottom: false,
+            child: RefreshIndicator(
+              onRefresh: () async {
+                HapticFeedback.mediumImpact();
+                if (active != null) appState.reconnect();
+                await Future.delayed(const Duration(milliseconds: 600));
+              },
+              color: scheme.primary,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverPadding(
+                    padding: padding ??
+                        EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).padding.bottom + 100),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Wire Title ──
+                          Row(
+                            children: [
+                              const WireLogo(size: 32, showGlow: true),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Wire',
+                                style: Theme.of(context).textTheme.headlineMedium,
                               ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                            ],
+                          ).animate().fadeIn(duration: 400.ms),
+                          const SizedBox(height: 16),
 
-                // ── Finder Mount (macOS only) ───────────────────────────────
-                if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS && appState.labsMountFinderEnabled) ...[
-                  const SizedBox(height: 16),
-                  StaggeredAnimatedItem(
-                    index: 2,
-                    child: _buildMountCard(context, appState, scheme),
+                          // ── Device Card ──
+                          _DeviceCard(
+                            deviceName: active?.name,
+                            isConnected: isConnected,
+                            isConnecting: isConnecting,
+                            batteryLevel: active?.batteryLevel,
+                            isCharging: active?.isCharging ?? false,
+                            connectionType: appState.connectionType,
+                            onPair: () => _openPairing(context, appState),
+                            onReconnect: active == null ? null : appState.reconnect,
+                          ).animate().fadeIn(duration: 500.ms).slideY(begin: 0.04, end: 0),
+
+                          const SizedBox(height: 20),
+
+                          // ── Send & Receive Buttons (ShareIt style) ──
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _BigActionButton(
+                                  icon: Icons.upload_rounded,
+                                  label: 'Send',
+                                  subtitle: 'Share files',
+                                  color: scheme.primary,
+                                  onTap: active == null
+                                      ? null
+                                      : () => _pickAndSend(context, appState),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: _BigActionButton(
+                                  icon: Icons.download_rounded,
+                                  label: 'Receive',
+                                  subtitle: 'Ready to receive',
+                                  color: const Color(0xFF34C759),
+                                  onTap: active == null ? null : () {},
+                                ),
+                              ),
+                            ],
+                          ).animate().fadeIn(delay: 150.ms, duration: 500.ms).slideY(begin: 0.04, end: 0),
+
+                          const SizedBox(height: 24),
+
+                          // ── Features (KDE Connect style) ──
+                          _SectionTitle(title: 'Features'),
+                          const SizedBox(height: 12),
+
+                          // Feature grid — 2 columns
+                          _FeaturesGrid(
+                            isConnected: isConnected,
+                            clipboardPaused: clipboardController.isSyncPaused,
+                            notificationSync: appState.notificationSyncEnabled,
+                            onClipboardToggle: () =>
+                                clipboardController.setSyncPaused(!clipboardController.isSyncPaused),
+                            onNotificationToggle: () => appState.toggleSetting(
+                                'notification_sync_enabled', !appState.notificationSyncEnabled),
+                            onRemoteFiles: active == null
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (_) => const RemoteFileManagerPage()),
+                                    ),
+                            onRingDevice: active == null ? null : appState.findPhone,
+                            onMount: (!kIsWeb &&
+                                    defaultTargetPlatform == TargetPlatform.macOS &&
+                                    active != null)
+                                ? () => appState.isUsbMounted
+                                    ? appState.unmountAsUsb()
+                                    : appState.mountAsUsb()
+                                : null,
+                            usbMounted: appState.isUsbMounted,
+                          ).animate().fadeIn(delay: 300.ms, duration: 500.ms).slideY(begin: 0.03, end: 0),
+
+                          const SizedBox(height: 24),
+
+                          // ── Active Transfers ──
+                          if (fileTransferProvider.transfers.any(
+                              (t) => t.status == 'sending' || t.status == 'receiving')) ...[
+                            _SectionTitle(title: 'Transfers'),
+                            const SizedBox(height: 12),
+                            ...fileTransferProvider.transfers
+                                .where((t) => t.status == 'sending' || t.status == 'receiving')
+                                .map((item) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 10),
+                                      child: _TransferCard(item: item),
+                                    )),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // ── Recent Activity (compact) ──
+                          if (appState.recentTransfers.isNotEmpty) ...[
+                            _SectionTitle(title: 'Recent'),
+                            const SizedBox(height: 10),
+                            ...appState.recentTransfers.take(3).map((item) => _RecentRow(
+                                  name: item.name,
+                                  subtitle: _formatSize(item.size),
+                                  onTap: () => appState.openFileLocation(item.path),
+                                )),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ],
-
-                const SizedBox(height: 32),
-
-                // ── Find Phone ─────────────────────────────────────────────
-                StaggeredAnimatedItem(
-                  index: 3,
-                  child: _buildFindPhoneSection(context, appState, scheme),
-                ),
-                const SizedBox(height: 100),
-              ],
+              ),
             ),
           ),
         );
@@ -173,346 +172,731 @@ class ControlHubPage extends StatelessWidget {
     );
   }
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+  void _openPairing(BuildContext context, AppState appState) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DevicePairingPage(
+          pairingService: appState.pairingService,
+          discoveredPeers: appState.discoveredPeers,
+          localDeviceId: appState.deviceId,
+          onMakeActive: (device) => appState.connectToPeer(
+            device.lastIp,
+            targetId: device.deviceId,
+            targetName: device.name,
+          ),
+          onConnectToPeer: (peer) => appState.connectToPeer(
+            peer.addresses.isNotEmpty ? peer.addresses : peer.address,
+            targetId: peer.deviceId,
+            targetName: peer.deviceName,
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _pickAndSend(BuildContext context, AppState appState) async {
+    final transferProvider = context.read<FileTransferProvider>();
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result == null || result.files.isEmpty) return;
+    final paths = result.paths.whereType<String>().toList();
+    if (paths.isEmpty) return;
     try {
-      final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-      if (result == null || result.files.isEmpty) return;
-      final filePaths = result.files.map((f) => f.path).whereType<String>().toList();
-      if (filePaths.isEmpty) return;
-      
+      await appState.pushFiles(paths, provider: transferProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sending ${filePaths.length} items…')),
+          SnackBar(content: Text('Sending ${paths.length} file${paths.length == 1 ? '' : 's'}')),
         );
       }
-      await appState.pushFiles(filePaths);
+    } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sent ${filePaths.length} items ✓'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Send failed: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Failed: $error')),
         );
       }
     }
   }
 
-  // ── Widgets ───────────────────────────────────────────────────────────────
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+}
 
-  Widget _buildClipboardCard({
-    required BuildContext context,
-    required ColorScheme scheme,
-    required ClipboardController clipboardController,
-    required double height,
-  }) {
-    final isPaused = clipboardController.isSyncPaused;
-    final accent = isPaused
-        ? scheme.onSurface.withValues(alpha: 0.4)
-        : scheme.secondary;
-    final statusColor = isPaused ? Colors.orange : Colors.green;
-    final lastClip = clipboardController.history.isNotEmpty
-        ? clipboardController.history.first.text.replaceAll('\n', ' ').trim()
-        : null;
+// ─── Device Card (KDE Connect inspired) ────────────────────────────────────────
 
-    return SizedBox(
-      height: height,
-      child: GlassCardInteractive(
-        onTap: () => clipboardController.setSyncPaused(!isPaused),
-        accent: isPaused ? null : scheme.secondary,
+class _DeviceCard extends StatelessWidget {
+  final String? deviceName;
+  final bool isConnected;
+  final bool isConnecting;
+  final int? batteryLevel;
+  final bool isCharging;
+  final String connectionType;
+  final VoidCallback onPair;
+  final VoidCallback? onReconnect;
+
+  const _DeviceCard({
+    required this.deviceName,
+    required this.isConnected,
+    required this.isConnecting,
+    required this.batteryLevel,
+    required this.isCharging,
+    required this.connectionType,
+    required this.onPair,
+    required this.onReconnect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: isConnected
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [
+                        scheme.primary.withValues(alpha: 0.15),
+                        scheme.primary.withValues(alpha: 0.05),
+                      ]
+                    : [
+                        scheme.primary.withValues(alpha: 0.08),
+                        scheme.primary.withValues(alpha: 0.02),
+                      ],
+              )
+            : null,
+        color: isConnected ? null : scheme.surface.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(24),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    isPaused
-                        ? Icons.sync_disabled_rounded
-                        : Icons.content_paste_go_rounded,
-                    color: accent,
-                    size: 20,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isPaused ? 'PAUSED' : 'LIVE',
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      color: statusColor,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Clipboard',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  lastClip != null
-                      ? (lastClip.length > 22
-                            ? '${lastClip.substring(0, 22)}…'
-                            : lastClip)
-                      : isPaused
-                      ? 'Sync paused'
-                      : 'Tap to pause',
-                  style: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.4),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ],
+        border: Border.all(
+          color: isConnected
+              ? scheme.primary.withValues(alpha: 0.2)
+              : scheme.outline.withValues(alpha: 0.4),
         ),
       ),
+      child: deviceName == null
+          ? _buildUnpairedState(context, scheme)
+          : _buildPairedState(context, scheme),
     );
   }
 
-  Widget _buildMountCard(
-    BuildContext context,
-    AppState appState,
-    ColorScheme scheme,
-  ) {
-    final isMounted = appState.isUsbMounted;
-    final isPeerConnected = appState.pairingService.activeDevice != null;
-    final accent = scheme.onSurface;
+  Widget _buildUnpairedState(BuildContext context, ColorScheme scheme) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.08),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.devices_rounded, size: 32, color: scheme.primary),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'No device connected',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Scan a QR code to pair your phone and computer',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: scheme.onSurface.withValues(alpha: 0.5),
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 18),
+        FilledButton.icon(
+          onPressed: onPair,
+          icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+          label: const Text('Pair device'),
+        ),
+      ],
+    );
+  }
 
-    return GlassCardInteractive(
-      onTap: isPeerConnected
-          ? () {
-              if (isMounted) {
-                appState.unmountAsUsb();
-              } else {
-                appState.mountAsUsb();
-              }
-            }
-          : null,
-      accent: isPeerConnected ? accent : null,
-      borderRadius: BorderRadius.circular(24),
-      padding: const EdgeInsets.all(16),
+  Widget _buildPairedState(BuildContext context, ColorScheme scheme) {
+    return Row(
+      children: [
+        // Device avatar
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(Icons.phone_android_rounded, size: 26, color: scheme.primary),
+        ),
+        const SizedBox(width: 16),
+        // Device info
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      deviceName!,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _StatusPill(isConnected: isConnected, isConnecting: isConnecting),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  if (isConnected && batteryLevel != null) ...[
+                    Icon(
+                      isCharging ? Icons.battery_charging_full_rounded : Icons.battery_std_rounded,
+                      size: 14,
+                      color: batteryLevel! <= 20
+                          ? Colors.redAccent
+                          : scheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$batteryLevel%',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface.withValues(alpha: 0.5),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  if (isConnected && connectionType.isNotEmpty)
+                    Text(
+                      connectionType,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  if (!isConnected)
+                    Text(
+                      'Tap to reconnect',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        // Actions
+        if (!isConnected && onReconnect != null)
+          IconButton(
+            onPressed: onReconnect,
+            icon: const Icon(Icons.refresh_rounded),
+            style: IconButton.styleFrom(
+              foregroundColor: scheme.primary,
+              backgroundColor: scheme.primary.withValues(alpha: 0.08),
+            ),
+          ),
+        IconButton(
+          onPressed: onPair,
+          icon: const Icon(Icons.settings_outlined, size: 20),
+          style: IconButton.styleFrom(
+            foregroundColor: scheme.onSurface.withValues(alpha: 0.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Status Pill ───────────────────────────────────────────────────────────────
+
+class _StatusPill extends StatefulWidget {
+  final bool isConnected;
+  final bool isConnecting;
+
+  const _StatusPill({required this.isConnected, required this.isConnecting});
+
+  @override
+  State<_StatusPill> createState() => _StatusPillState();
+}
+
+class _StatusPillState extends State<_StatusPill> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    if (widget.isConnected) _pulseCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_StatusPill old) {
+    super.didUpdateWidget(old);
+    if (widget.isConnected && !_pulseCtrl.isAnimating) {
+      _pulseCtrl.repeat(reverse: true);
+    } else if (!widget.isConnected && _pulseCtrl.isAnimating) {
+      _pulseCtrl.stop();
+      _pulseCtrl.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.isConnected
+        ? const Color(0xFF34C759)
+        : widget.isConnecting
+            ? const Color(0xFFFF9F0A)
+            : Colors.grey;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(99),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              isMounted ? Icons.eject_rounded : Icons.usb_rounded,
-              color: accent,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isMounted
-                      ? 'Phone Mounted in Finder'
-                      : 'Mount Phone in Finder',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  isMounted
-                      ? 'Tap to safely eject'
-                      : isPeerConnected
-                      ? 'Browse phone storage like a USB drive'
-                      : 'Connect a device first',
-                  style: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.4),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              isMounted ? 'EJECT' : 'MOUNT',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-                color: accent,
-                letterSpacing: 1,
+          AnimatedBuilder(
+            animation: _pulseCtrl,
+            builder: (_, _) => Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                boxShadow: widget.isConnected
+                    ? [BoxShadow(color: color.withValues(alpha: 0.3 + _pulseCtrl.value * 0.3), blurRadius: 4)]
+                    : null,
               ),
             ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            widget.isConnected
+                ? 'Connected'
+                : widget.isConnecting
+                    ? 'Connecting'
+                    : 'Offline',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildBentoCard({
-    required ColorScheme scheme,
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color accent,
-    required double height,
-    VoidCallback? onTap,
-  }) {
-    return SizedBox(
-      height: height,
-      child: GlassCardInteractive(
-        onTap: onTap,
-        accent: onTap != null ? accent : null,
-        borderRadius: BorderRadius.circular(24),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: accent, size: 20),
+// ─── Big Action Button (ShareIt style) ─────────────────────────────────────────
+
+class _BigActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _BigActionButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.35,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled
+              ? () {
+                  HapticFeedback.mediumImpact();
+                  onTap!();
+                }
+              : null,
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: color.withValues(alpha: 0.15)),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
               children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 28, color: color),
+                ),
+                const SizedBox(height: 12),
                 Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                    letterSpacing: -0.5,
+                  label,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 1),
+                const SizedBox(height: 2),
                 Text(
                   subtitle,
                   style: TextStyle(
+                    fontSize: 11,
                     color: scheme.onSurface.withValues(alpha: 0.4),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildFindPhoneSection(
-    BuildContext context,
-    AppState appState,
-    ColorScheme scheme,
-  ) {
-    final isConnected = appState.pairingService.activeDevice != null;
-    return GlassCardInteractive(
-      onTap: isConnected
-          ? () {
-              appState.findPhone();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Ringing remote device…')),
-              );
-            }
-          : null,
-      accent: Colors.red,
-      borderRadius: BorderRadius.circular(24),
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: scheme.onSurface.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
+// ─── Section Title ─────────────────────────────────────────────────────────────
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title.toUpperCase(),
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 1.5,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.28),
+      ),
+    );
+  }
+}
+
+// ─── Features Grid (KDE Connect style) ─────────────────────────────────────────
+
+class _FeaturesGrid extends StatelessWidget {
+  final bool isConnected;
+  final bool clipboardPaused;
+  final bool notificationSync;
+  final VoidCallback onClipboardToggle;
+  final VoidCallback onNotificationToggle;
+  final VoidCallback? onRemoteFiles;
+  final VoidCallback? onRingDevice;
+  final VoidCallback? onMount;
+  final bool usbMounted;
+
+  const _FeaturesGrid({
+    required this.isConnected,
+    required this.clipboardPaused,
+    required this.notificationSync,
+    required this.onClipboardToggle,
+    required this.onNotificationToggle,
+    required this.onRemoteFiles,
+    required this.onRingDevice,
+    this.onMount,
+    required this.usbMounted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final spacing = 10.0;
+        final tileWidth = (constraints.maxWidth - spacing) / 2;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            SizedBox(
+              width: tileWidth,
+              child: _FeatureTile(
+                icon: clipboardPaused ? Icons.content_paste_off_rounded : Icons.content_paste_go_rounded,
+                title: 'Clipboard',
+                subtitle: clipboardPaused ? 'Paused' : 'Syncing',
+                isActive: !clipboardPaused,
+                onTap: onClipboardToggle,
+              ),
             ),
-            child: Icon(
-              Icons.ring_volume_rounded,
-              color: scheme.onSurface,
-              size: 24,
+            SizedBox(
+              width: tileWidth,
+              child: _FeatureTile(
+                icon: Icons.notifications_outlined,
+                title: 'Notifications',
+                subtitle: notificationSync ? 'Mirroring' : 'Off',
+                isActive: notificationSync,
+                onTap: onNotificationToggle,
+              ),
+            ),
+            SizedBox(
+              width: tileWidth,
+              child: _FeatureTile(
+                icon: Icons.folder_outlined,
+                title: 'Remote Files',
+                subtitle: 'Browse device',
+                isActive: false,
+                onTap: onRemoteFiles,
+              ),
+            ),
+            SizedBox(
+              width: tileWidth,
+              child: _FeatureTile(
+                icon: Icons.ring_volume_outlined,
+                title: 'Find Device',
+                subtitle: 'Ring phone',
+                isActive: false,
+                onTap: onRingDevice,
+              ),
+            ),
+            if (onMount != null)
+              SizedBox(
+                width: tileWidth,
+                child: _FeatureTile(
+                  icon: usbMounted ? Icons.usb_off_rounded : Icons.usb_rounded,
+                  title: usbMounted ? 'Unmount' : 'Mount',
+                  subtitle: 'Finder access',
+                  isActive: usbMounted,
+                  onTap: onMount,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _FeatureTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isActive;
+  final VoidCallback? onTap;
+
+  const _FeatureTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.35,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled
+              ? () {
+                  HapticFeedback.lightImpact();
+                  onTap!();
+                }
+              : null,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? scheme.primary.withValues(alpha: 0.08)
+                  : scheme.surface.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isActive
+                    ? scheme.primary.withValues(alpha: 0.2)
+                    : scheme.outline.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: isActive ? scheme.primary : scheme.onSurface.withValues(alpha: 0.45),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isActive ? scheme.primary : scheme.onSurface.withValues(alpha: 0.7),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: scheme.onSurface.withValues(alpha: 0.35),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 16),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Transfer Card ─────────────────────────────────────────────────────────────
+
+class _TransferCard extends StatelessWidget {
+  final dynamic item;
+  const _TransferCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final progress = (item.progress as double).clamp(0.0, 1.0);
+    final isSending = item.direction == 'send';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        children: [
+          // Circular progress
+          SizedBox(
+            width: 44,
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 3,
+                  backgroundColor: scheme.primary.withValues(alpha: 0.1),
+                  color: scheme.primary,
+                ),
+                Icon(
+                  isSending ? Icons.upload_rounded : Icons.download_rounded,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Lost your device?',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-                ),
-                const SizedBox(height: 2),
                 Text(
-                  isConnected
-                      ? 'Ring at max volume to find it.'
-                      : 'Connect a device first',
+                  item.name as String,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${(progress * 100).toInt()}% · ${isSending ? 'Sending' : 'Receiving'}',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
                     color: scheme.onSurface.withValues(alpha: 0.4),
+                    fontSize: 11,
                   ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Recent Row ────────────────────────────────────────────────────────────────
+
+class _RecentRow extends StatelessWidget {
+  final String name;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _RecentRow({
+    required this.name,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: scheme.onSurface.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.insert_drive_file_outlined, size: 18, color: scheme.onSurface.withValues(alpha: 0.35)),
+        ),
+        title: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        subtitle: subtitle.isNotEmpty
+            ? Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.35), fontSize: 11))
+            : null,
+        trailing: Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurface.withValues(alpha: 0.15)),
       ),
     );
   }

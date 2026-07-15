@@ -1,12 +1,14 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
-import '../../services/pairing_service.dart';
-import '../../services/discovery_service.dart';
-import '../../services/websocket_service.dart';
+
 import '../../providers/app_state.dart';
+import '../../services/discovery_service.dart';
+import '../../services/pairing_service.dart';
+import '../../widgets/liquid_background.dart';
 import '../widgets/qr_pairing_dialog.dart';
 
 class DevicePairingPage extends StatefulWidget {
@@ -31,6 +33,7 @@ class DevicePairingPage extends StatefulWidget {
 
 class _DevicePairingPageState extends State<DevicePairingPage> {
   final MobileScannerController _scannerController = MobileScannerController();
+  bool _handledScan = false;
 
   @override
   void dispose() {
@@ -41,317 +44,303 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final appState = Provider.of<AppState>(context);
-    final paired = widget.pairingService.devices;
-    final active = widget.pairingService.activeDevice;
+    final appState = context.watch<AppState>();
+    final devices = widget.pairingService.devices;
+    final activeId = widget.pairingService.activeDevice?.deviceId;
+    final isMac = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('DEVICES', style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 2)),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        scrolledUnderElevation: 0,
+      appBar: AppBar(title: const Text('Pair device')),
+      body: LiquidBackground(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+          children: [
+            _PairingHero(isMac: isMac, onPrimary: () => _openPrimaryPairingSurface(context)),
+            const SizedBox(height: 20),
+            if (!kIsWeb && !isMac) ...[
+              _ScannerCard(
+                controller: _scannerController,
+                onDetected: _handledScan ? null : (raw) => _handleQr(raw),
+              ),
+              const SizedBox(height: 20),
+            ],
+            _SectionCard(
+              title: 'How pairing works',
+              child: Text(
+                isMac
+                    ? 'Keep this QR code open on your Mac, then scan it from the Android phone. The app chooses local Wi-Fi first and falls back to internet automatically.'
+                    : 'Open pairing on the Mac, scan its QR code here, and the link is created automatically. There is no manual network selection in the UI.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurface.withValues(alpha: 0.7),
+                    ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionCard(
+              title: 'Paired devices',
+              child: devices.isEmpty
+                  ? const Text('No paired devices yet.')
+                  : Column(
+                      children: devices
+                          .map(
+                            (device) => _PairedDeviceTile(
+                              device: device,
+                              isActive: device.deviceId == activeId,
+                              onConnect: () => widget.onMakeActive(device),
+                              onForget: () => _forgetDevice(context, appState, device),
+                            ),
+                          )
+                          .toList(),
+                    ),
+            ),
+            if (devices.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: appState.clearAllPairings,
+                child: const Text('Forget all devices'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openPrimaryPairingSurface(BuildContext context) {
+    final isMac = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+    if (isMac) {
+      final appState = context.read<AppState>();
+      showDialog(
+        context: context,
+        builder: (_) => QrPairingDialog(
+          deviceId: appState.deviceId,
+          deviceName: appState.deviceName,
+          port: 5757,
+          mode: 'auto',
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Scan from phone'),
+        content: const Text('Use the scanner on this page to scan the QR code shown on your Mac.'),
         actions: [
-           IconButton(
-             icon: const Icon(Icons.qr_code_2_rounded),
-             onPressed: () => _showQrGenerator(context),
-             tooltip: 'Show QR Code',
-           ),
-           if (!kIsWeb && defaultTargetPlatform != TargetPlatform.macOS)
-             IconButton(
-               icon: const Icon(Icons.qr_code_scanner_rounded),
-               onPressed: () => _openScanner(context),
-               tooltip: 'Scan QR Code',
-             ),
-           IconButton(
-             icon: const Icon(Icons.refresh_rounded),
-             onPressed: () => appState.refreshDiscovery(),
-             tooltip: 'Refresh Nearby Devices',
-           ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
-      body: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+    );
+  }
+
+  void _handleQr(String raw) {
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final List<String> ips = (data['ips'] is List) 
+          ? (data['ips'] as List).map((e) => e.toString()).toList() 
+          : [data['ip']?.toString() ?? ''];
+      
+      final peer = DiscoveryPeerInfo(
+        address: data['ip']?.toString() ?? '',
+        addresses: ips,
+        deviceId: data['id']?.toString() ?? '',
+        deviceName: data['name']?.toString() ?? 'Mac',
+        wsPort: data['port'] as int? ?? 5757,
+        filePort: data['filePort'] as int? ?? 5758,
+        mode: 'auto',
+      );
+
+      if (peer.address.isEmpty || peer.deviceId.isEmpty) {
+        return;
+      }
+
+      setState(() => _handledScan = true);
+      widget.onConnectToPeer(peer);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Connecting to ${peer.deviceName}')),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _forgetDevice(BuildContext context, AppState appState, PairedDevice device) async {
+    await appState.removeSavedDevice(device.deviceId);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${device.name} removed')),
+      );
+    }
+  }
+}
+
+class _PairingHero extends StatelessWidget {
+  final bool isMac;
+  final VoidCallback onPrimary;
+
+  const _PairingHero({
+    required this.isMac,
+    required this.onPrimary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  if (active != null) ...[
-                    _buildSectionHeader('ACTIVE DEVICE', scheme),
-                    _buildActiveCard(active, scheme, appState),
-                    const SizedBox(height: 24),
-                  ],
-                  _buildSectionHeader('NEARBY & SAVED', scheme),
-                  _buildDevicesList(paired, widget.discoveredPeers, active, scheme, appState),
-                  const SizedBox(height: 120), // Bottom padding for dock
-                ],
+          Text(
+            isMac ? 'Show QR on the Mac.' : 'Scan QR on the phone.',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            isMac
+                ? 'This Mac acts as the pairing source. Your phone scans the code and the connection is created automatically.'
+                : 'Scan the Mac QR code here. After pairing, clipboard sync, file sharing, remote file access, and ringing are ready.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.68),
+                ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton(
+            onPressed: onPrimary,
+            child: Text(isMac ? 'Show QR code' : 'Pair with Mac'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScannerCard extends StatelessWidget {
+  final MobileScannerController controller;
+  final ValueChanged<String>? onDetected;
+
+  const _ScannerCard({
+    required this.controller,
+    required this.onDetected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('QR scanner', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: MobileScanner(
+                controller: controller,
+                onDetect: (capture) {
+                  if (onDetected == null) {
+                    return;
+                  }
+                  for (final barcode in capture.barcodes) {
+                    final raw = barcode.rawValue;
+                    if (raw != null && raw.isNotEmpty) {
+                      onDetected!(raw);
+                      return;
+                    }
+                  }
+                },
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          Text(
+            'Point the camera at the QR code displayed by the Mac app.',
+            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildSectionHeader(String title, ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12, left: 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: scheme.primary.withValues(alpha: 0.8),
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
 
-  Widget _buildActiveCard(PairedDevice active, ColorScheme scheme, AppState appState) {
-    final isConnected = appState.lastStatus == ConnectionStatus.connected;
+  const _SectionCard({
+    required this.title,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.2)),
+        color: scheme.surface.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
       ),
-      padding: const EdgeInsets.all(20),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            backgroundColor: scheme.primary,
-            radius: 28,
-            child: Icon(
-              active.osType == 'macos' ? Icons.laptop_mac_rounded : Icons.phone_android_rounded,
-              color: scheme.onPrimary,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(active.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                Text(
-                  isConnected ? 'Connected • ${active.lastIp}' : 'Disconnected',
-                  style: TextStyle(color: isConnected ? Colors.green : scheme.onSurface.withValues(alpha: 0.6), fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-          if (!isConnected)
-            FilledButton.tonal(
-              onPressed: () => appState.reconnect(),
-              child: const Text('Connect'),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.settings_remote_rounded),
-              onPressed: () => appState.findPhone(),
-              tooltip: 'Ring remote device',
-            )
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          child,
         ],
       ),
     );
   }
+}
 
-  Widget _buildDevicesList(
-    List<PairedDevice> paired,
-    List<DiscoveryPeerInfo> discovered,
-    PairedDevice? active,
-    ColorScheme scheme,
-    AppState appState,
-  ) {
-    final Map<String, dynamic> merged = {};
+class _PairedDeviceTile extends StatelessWidget {
+  final PairedDevice device;
+  final bool isActive;
+  final VoidCallback onConnect;
+  final VoidCallback onForget;
 
-    for (var p in paired) {
-      if (p.deviceId != active?.deviceId) {
-        merged[p.deviceId] = p;
-      }
-    }
-    for (var d in discovered) {
-      if (d.deviceId != active?.deviceId) {
-        merged[d.deviceId] = d;
-      }
-    }
+  const _PairedDeviceTile({
+    required this.device,
+    required this.isActive,
+    required this.onConnect,
+    required this.onForget,
+  });
 
-    if (merged.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Center(
-          child: Column(
-            children: [
-              Icon(Icons.wifi_tethering_off_rounded, size: 48, color: scheme.onSurface.withValues(alpha: 0.2)),
-              const SizedBox(height: 16),
-              Text('No other devices found', style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.5))),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: merged.values.map((item) {
-        final isPaired = item is PairedDevice;
-        final name = isPaired ? item.name : (item as DiscoveryPeerInfo).deviceName;
-        final osType = isPaired ? item.osType : 'unknown';
-        final ip = isPaired ? item.lastIp : (item as DiscoveryPeerInfo).address;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            leading: Icon(
-              osType == 'macos' ? Icons.laptop_mac_rounded : Icons.phone_android_rounded,
-              color: scheme.onSurface.withValues(alpha: 0.7),
-            ),
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(ip, style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.5))),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FilledButton.icon(
-                  onPressed: () {
-                    if (item is PairedDevice) {
-                      widget.onMakeActive(item);
-                    } else if (item is DiscoveryPeerInfo) {
-                      widget.onConnectToPeer(item);
-                    }
-                  },
-                  icon: Icon(isPaired ? Icons.swap_horiz_rounded : Icons.add_link_rounded, size: 16),
-                  label: Text(isPaired ? 'Switch' : 'Pair'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: isPaired ? scheme.surfaceContainerHigh : scheme.primary,
-                    foregroundColor: isPaired ? scheme.onSurface : scheme.onPrimary,
-                  ),
-                ),
-                if (item is PairedDevice) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(Icons.delete_outline_rounded, size: 20, color: scheme.error.withValues(alpha: 0.6)),
-                    onPressed: () => _showDeleteConfirm(context, appState, item),
-                    tooltip: 'Remove Device',
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  void _showDeleteConfirm(BuildContext context, AppState appState, PairedDevice device) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Device?'),
-        content: Text('Are you sure you want to remove "${device.name}"? You will need to re-pair it to connect again.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
-          TextButton(
-            onPressed: () {
-              appState.removeSavedDevice(device.deviceId);
-              Navigator.pop(ctx);
-            },
-            child: const Text('REMOVE', style: TextStyle(color: Colors.red)),
-          ),
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(device.osType == 'macos' ? Icons.laptop_mac_rounded : Icons.phone_android_rounded),
+      title: Text(device.name),
+      subtitle: Text(isActive ? 'Active device' : 'Ready to reconnect'),
+      trailing: Wrap(
+        spacing: 8,
+        children: [
+          TextButton(onPressed: onConnect, child: const Text('Connect')),
+          TextButton(onPressed: onForget, child: const Text('Forget')),
         ],
-      ),
-    );
-  }
-
-  void _showQrGenerator(BuildContext context) async {
-    if (!context.mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) => QrPairingDialog(
-        deviceId: context.read<AppState>().deviceId,
-        deviceName: context.read<AppState>().deviceName,
-        port: 5757,
-        mode: context.read<AppState>().connectionMode.name,
-      ),
-    );
-  }
-
-  void _openScanner(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: SizedBox(
-            width: 300,
-            height: 400,
-            child: Stack(
-              children: [
-                MobileScanner(
-                  controller: _scannerController,
-                  onDetect: (capture) {
-                    final List<Barcode> barcodes = capture.barcodes;
-                    for (final barcode in barcodes) {
-                      if (barcode.rawValue != null) {
-                        try {
-                          final data = jsonDecode(barcode.rawValue!);
-                          final peer = DiscoveryPeerInfo(
-                            address: data['ip'],
-                            deviceId: data['id'],
-                            deviceName: data['name'],
-                            wsPort: data['port'],
-                            filePort: 5758,
-                            mode: data['mode'] ?? 'auto',
-                          );
-                          widget.onConnectToPeer(peer);
-                          Navigator.pop(context);
-                          return;
-                        } catch (_) {}
-                      }
-                    }
-                  },
-                ),
-                Positioned(
-                  top: 16,
-                  right: 16,
-                  child: IconButton.filled(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ),
-                Positioned(
-                  bottom: 24,
-                  left: 0,
-                  right: 0,
-                  child: Text(
-                    'Scan Device QR',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white, 
-                      fontWeight: FontWeight.bold, 
-                      fontSize: 16, 
-                      shadows: [
-                        Shadow(
-                          blurRadius: 10.clamp(0, double.infinity).toDouble(), 
-                          color: Colors.black,
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

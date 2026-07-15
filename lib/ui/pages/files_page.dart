@@ -1,13 +1,10 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
-import '../../models/transfer_item.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
+
 import '../../providers/app_state.dart';
 import '../../providers/file_transfer_provider.dart';
-import '../widgets/glass_card.dart';
-import '../widgets/staggered_animated_item.dart';
 import '../../widgets/liquid_background.dart';
 import 'remote_file_manager_page.dart';
 
@@ -17,490 +14,541 @@ class FilesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Consumer2<AppState, FileTransferProvider>(
-      builder: (context, appState, provider, _) {
-        final transfers = provider.transfers;
-        final isPeerConnected = appState.pairingService.activeDevice != null;
+      builder: (context, appState, transferProvider, _) {
+        final scheme = Theme.of(context).colorScheme;
+        final active = appState.pairingService.activeDevice;
+        final isConnected = appState.connectionStatus == ConnectionStatus.connected ||
+            appState.connectionStatus == ConnectionStatus.syncing;
 
         return LiquidBackground(
-          child: CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              // ── Header ──
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      (padding ??
-                              const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 24,
-                              ))
-                          .add(const EdgeInsets.only(top: 40)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 50),
+          child: SafeArea(
+            bottom: false,
+            child: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Files', style: Theme.of(context).textTheme.headlineMedium)
+                            .animate().fadeIn(duration: 400.ms).slideX(begin: -0.05, end: 0),
+                        const SizedBox(height: 4),
                         Text(
-                          'FILE TRANSFERS',
+                          isConnected
+                              ? 'Send and receive files with ${active?.name ?? 'your device'}'
+                              : 'Connect a device to start sharing files',
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            color: scheme.onSurface.withValues(alpha: 0.5),
-                            letterSpacing: 4.0,
+                            color: scheme.onSurface.withValues(alpha: 0.55),
+                            fontSize: 13,
                           ),
                         ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Send & Receive',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: scheme.onSurface,
-                              letterSpacing: -1.2,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Quick-Action Buttons ──
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                  child: Row(
-                    children: [
-                      // Send File
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.file_upload_rounded,
-                          label: 'Send File',
-                          accent: scheme.onSurface,
-                          enabled: isPeerConnected,
-                          onTap: () => _pickAndSendFile(context, appState, provider),
+                        const SizedBox(height: 20),
+                        // Send files card
+                        _SendFilesCard(
+                          isConnected: isConnected,
+                          onSend: isConnected ? () => _pickAndSend(context, appState) : null,
+                          onRemoteBrowse: isConnected
+                              ? () => Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (_) => const RemoteFileManagerPage()),
+                                  )
+                              : null,
                         ),
-                      ),
-                      const SizedBox(width: 12),
-
-                      // Browse Remote
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.folder_shared_rounded,
-                          label: 'Remote Files',
-                          accent: scheme.onSurface,
-                          enabled: isPeerConnected,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const RemoteFileManagerPage(),
-                            ),
+                        const SizedBox(height: 20),
+                        // Active transfers
+                        if (transferProvider.transfers.any((t) =>
+                            t.status == 'sending' || t.status == 'receiving')) ...[
+                          _SectionHeader(
+                            title: 'Active transfers',
+                            icon: Icons.sync_rounded,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-
-                      // Open Downloads
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.folder_open_rounded,
-                          label: 'Downloads',
-                          accent: scheme.onSurface,
-                          enabled: true,
-                          onTap: () => _openDownloadsFolder(context, appState),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Mount / Unmount Finder Toggle (macOS only) ──
-              if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS &&
-                  isPeerConnected &&
-                  appState.labsMountFinderEnabled)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                    child: GlassCardInteractive(
-                      onTap: () {
-                        if (appState.isUsbMounted) {
-                          appState.unmountAsUsb();
-                        } else {
-                          appState.mountAsUsb();
-                        }
-                      },
-                      accent: appState.isUsbMounted
-                          ? scheme.onSurface
-                          : scheme.onSurface.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(20),
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color:
-                                  (appState.isUsbMounted
-                                          ? Colors.green
-                                          : scheme.secondary)
-                                      .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Icon(
-                              appState.isUsbMounted
-                                  ? Icons.eject_rounded
-                                  : Icons.usb_rounded,
-                              color: appState.isUsbMounted
-                                  ? scheme.onSurface
-                                  : scheme.onSurface.withValues(alpha: 0.6),
-                              size: 22,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  appState.isUsbMounted
-                                      ? 'Phone Mounted in Finder'
-                                      : 'Mount Phone in Finder',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  appState.isUsbMounted
-                                      ? 'Tap to safely eject'
-                                      : 'Browse phone storage like a USB drive',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: scheme.onSurface.withValues(
-                                      alpha: 0.4,
+                          const SizedBox(height: 12),
+                          ...transferProvider.transfers
+                              .where((t) => t.status == 'sending' || t.status == 'receiving')
+                              .map((item) => _ActiveTransferTile(item: item)),
+                          const SizedBox(height: 20),
+                        ],
+                        // Transfer history
+                        _SectionHeader(
+                          title: 'Transfer history',
+                          icon: Icons.history_rounded,
+                          trailing: transferProvider.transfers.isNotEmpty
+                              ? TextButton(
+                                  onPressed: () => _showClearDialog(context, transferProvider),
+                                  child: Text(
+                                    'Clear',
+                                    style: TextStyle(
+                                      color: scheme.onSurface.withValues(alpha: 0.4),
+                                      fontSize: 12,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  (appState.isUsbMounted
-                                          ? Colors.green
-                                          : scheme.secondary)
-                                      .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              appState.isUsbMounted ? 'EJECT' : 'MOUNT',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: appState.isUsbMounted
-                                    ? Colors.green
-                                    : scheme.secondary,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                     ),
                   ),
                 ),
-
-              // ── Transfer History Header ──
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 0, 28, 12),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Recent Transfers',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (transfers.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () =>
-                              _confirmClearHistory(context, provider),
-                          icon: Icon(
-                            Icons.delete_sweep_rounded,
-                            size: 16,
-                            color: scheme.error.withValues(alpha: 0.7),
-                          ),
-                          label: Text(
-                            'Clear',
-                            style: TextStyle(
-                              color: scheme.error.withValues(alpha: 0.7),
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Transfer List ──
-              if (transfers.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 60),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.swap_vert_rounded,
-                            size: 64,
-                            color: scheme.onSurface.withValues(alpha: 0.08),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No transfers yet',
-                            style: TextStyle(
-                              color: scheme.onSurface.withValues(alpha: 0.3),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            isPeerConnected
-                                ? 'Tap "Send File" to get started'
-                                : 'Connect a device first',
-                            style: TextStyle(
-                              color: scheme.onSurface.withValues(alpha: 0.2),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              else
+                // Transfer history list
+                _buildHistoryList(context, appState, transferProvider, scheme),
+                // Bottom padding
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final item = transfers[index];
-                      return StaggeredAnimatedItem(
-                        index: index,
-                        child: _buildTransferTile(
-                          context,
-                          item,
-                          appState,
-                          scheme,
-                        ),
-                      );
-                    }, childCount: transfers.length),
-                  ),
+                  padding: padding ?? EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 100),
                 ),
-              const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
-            ],
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  // ── Pick a file and send it to the active peer ──
-  void _pickAndSendFile(BuildContext context, AppState appState, FileTransferProvider provider) async {
-    try {
-      final result = await FilePicker.platform.pickFiles();
-      if (result == null || result.files.isEmpty) return;
-
-      final filePath = result.files.single.path;
-      if (filePath == null) return;
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sending ${result.files.single.name}...')),
-        );
-      }
-
-      await appState.pushFiles([filePath], provider: provider);
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sent ${result.files.single.name} ✓'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Send failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  // ── Open the local Downloads/Wire folder ──
-  void _openDownloadsFolder(BuildContext context, AppState appState) async {
-    try {
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
-        final path =
-            appState.downloadsPath ??
-            '${Platform.environment['HOME']}/Downloads/Wire';
-        await Process.run('open', [path]);
-      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        appState.openFileLocation('/storage/emulated/0/Download/Wire');
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not open folder: $e')));
-      }
-    }
-  }
-
-  // ── Confirm then clear history ──
-  void _confirmClearHistory(
+  Widget _buildHistoryList(
     BuildContext context,
-    FileTransferProvider provider,
+    AppState appState,
+    FileTransferProvider transferProvider,
+    ColorScheme scheme,
   ) {
-    final scheme = Theme.of(context).colorScheme;
+    final completedTransfers = transferProvider.transfers
+        .where((t) => t.status == 'complete' || t.status == 'failed')
+        .toList();
+
+    final recentTransfers = appState.recentTransfers;
+
+    final allItems = <_TransferDisplayItem>[];
+    for (final t in completedTransfers) {
+      allItems.add(_TransferDisplayItem(
+        name: t.name,
+        path: t.path,
+        status: t.status,
+        direction: t.direction,
+        size: t.total,
+        time: t.startTime,
+      ));
+    }
+    for (final t in recentTransfers) {
+      if (!allItems.any((i) => i.path == t.path)) {
+        allItems.add(_TransferDisplayItem(
+          name: t.name,
+          path: t.path,
+          status: 'complete',
+          direction: 'receive',
+          size: t.size,
+          time: t.timestamp,
+        ));
+      }
+    }
+
+    if (allItems.isEmpty) {
+      return SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        sliver: SliverToBoxAdapter(
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: scheme.onSurface.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.folder_open_rounded,
+                  size: 40,
+                  color: scheme.onSurface.withValues(alpha: 0.12),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No transfers yet',
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.35),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Send or receive files to see them here',
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.25),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      sliver: SliverList.builder(
+        itemCount: allItems.length,
+        itemBuilder: (context, index) {
+          final item = allItems[index];
+          return _TransferHistoryTile(
+            item: item,
+            onOpen: () => appState.openFileLocation(item.path),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickAndSend(BuildContext context, AppState appState) async {
+    final transferProvider = context.read<FileTransferProvider>();
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result == null || result.files.isEmpty) return;
+
+    final paths = result.paths.whereType<String>().toList();
+    if (paths.isEmpty) return;
+
+    try {
+      await appState.pushFiles(paths, provider: transferProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sending ${paths.length} item${paths.length == 1 ? '' : 's'}')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Transfer failed: $error')),
+        );
+      }
+    }
+  }
+
+  void _showClearDialog(BuildContext context, FileTransferProvider provider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: scheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Clear Transfer History?'),
-        content: const Text(
-          'This only removes the log — downloaded files are not deleted.',
-        ),
+        title: const Text('Clear transfer history?'),
+        content: const Text('This removes completed and failed transfers from the list.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
             onPressed: () {
               provider.clearHistory();
               Navigator.pop(ctx);
             },
-            child: Text(
-              'Clear',
-              style: TextStyle(
-                color: scheme.error,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            child: const Text('Clear'),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildTransferTile(
-    BuildContext context,
-    TransferItem item,
-    AppState appState,
-    ColorScheme scheme,
-  ) {
-    final isReceive = item.direction == 'receive';
-    final isComplete = item.status == 'complete';
-    final accent = isReceive ? scheme.primary : scheme.tertiary;
+class _SendFilesCard extends StatelessWidget {
+  final bool isConnected;
+  final VoidCallback? onSend;
+  final VoidCallback? onRemoteBrowse;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GlassCardInteractive(
-        onTap: isComplete ? () => appState.openFileLocation(item.path) : null,
-        accent: accent,
-        borderRadius: BorderRadius.circular(20),
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
+  const _SendFilesCard({
+    required this.isConnected,
+    this.onSend,
+    this.onRemoteBrowse,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _QuickActionButton(
+                  icon: Icons.upload_file_rounded,
+                  label: 'Send files',
+                  subtitle: 'Pick & share',
+                  onTap: onSend,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _QuickActionButton(
+                  icon: Icons.folder_outlined,
+                  label: 'Remote files',
+                  subtitle: 'Browse device',
+                  onTap: onRemoteBrowse,
+                ),
+              ),
+            ],
+          ),
+          if (!isConnected) ...[
+            const SizedBox(height: 14),
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
+                color: scheme.onSurface.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                isReceive
-                    ? Icons.file_download_rounded
-                    : Icons.file_upload_rounded,
-                color: accent,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    item.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  if (!isComplete) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: item.progress,
-                        backgroundColor: accent.withValues(alpha: 0.1),
-                        color: accent,
-                        minHeight: 4,
+                  Icon(Icons.info_outline_rounded, size: 16, color: scheme.onSurface.withValues(alpha: 0.35)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Connect a device to enable file sharing',
+                      style: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.4),
+                        fontSize: 12,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                  ],
-                  Text(
-                    isComplete
-                        ? 'Tap to open location'
-                        : '${(item.progress * 100).toInt()}% • ${_formatSize(item.total)}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: isComplete
-                          ? accent
-                          : scheme.onSurface.withValues(alpha: 0.4),
                     ),
                   ),
                 ],
               ),
             ),
-            if (isComplete)
-              Icon(
-                Icons.check_circle_rounded,
-                color: Colors.green.withValues(alpha: 0.5),
-                size: 20,
-              )
-            else
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, size: 22, color: scheme.primary),
+                const SizedBox(height: 10),
+                Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.45),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget? trailing;
+
+  const _SectionHeader({
+    required this.title,
+    required this.icon,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: scheme.onSurface.withValues(alpha: 0.35)),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: scheme.onSurface.withValues(alpha: 0.5),
+          ),
+        ),
+        const Spacer(),
+        ?trailing,
+      ],
+    );
+  }
+}
+
+class _ActiveTransferTile extends StatelessWidget {
+  final dynamic item;
+  const _ActiveTransferTile({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final progress = (item.progress as double).clamp(0.0, 1.0);
+    final isSending = item.direction == 'send';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.surface.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isSending ? Icons.upload_rounded : Icons.download_rounded,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.name as String,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${(progress * 100).toInt()}%',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: scheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: scheme.primary.withValues(alpha: 0.1),
+                color: scheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TransferHistoryTile extends StatelessWidget {
+  final _TransferDisplayItem item;
+  final VoidCallback onOpen;
+
+  const _TransferHistoryTile({required this.item, required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isReceived = item.direction == 'receive';
+    final isFailed = item.status == 'failed';
+    final ext = item.name.split('.').last.toLowerCase();
+    final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].contains(ext);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onOpen,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: scheme.surface.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: scheme.outline.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              children: [
+                // File preview / icon
+                if (isImage && item.path.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 42,
+                      height: 42,
+                      child: Image.asset(
+                        item.path,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _FileIcon(
+                          ext: ext,
+                          isFailed: isFailed,
+                          isReceived: isReceived,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  _FileIcon(ext: ext, isFailed: isFailed, isReceived: isReceived),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_formatSize(item.size)} · ${isReceived ? 'Received' : 'Sent'}${item.time != null ? ' · ${_formatTimeAgo(item.time!)}' : ''}',
+                        style: TextStyle(
+                          color: scheme.onSurface.withValues(alpha: 0.4),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: scheme.onSurface.withValues(alpha: 0.2),
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -510,65 +558,94 @@ class FilesPage extends StatelessWidget {
     if (bytes <= 0) return '0 B';
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  String _formatTimeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${time.day}/${time.month}';
   }
 }
 
-// ── Reusable Action Button widget ──
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color accent;
-  final bool enabled;
-  final VoidCallback onTap;
+class _FileIcon extends StatelessWidget {
+  final String ext;
+  final bool isFailed;
+  final bool isReceived;
 
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.accent,
-    required this.enabled,
-    required this.onTap,
-  });
+  const _FileIcon({required this.ext, required this.isFailed, required this.isReceived});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GlassCardInteractive(
-      onTap: enabled ? onTap : null,
-      accent: enabled ? accent : null,
-      borderRadius: BorderRadius.circular(20),
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: (enabled ? accent : scheme.onSurface).withValues(
-                alpha: 0.12,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: enabled ? accent : scheme.onSurface.withValues(alpha: 0.3),
-              size: 22,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-              color: enabled
-                  ? scheme.onSurface
-                  : scheme.onSurface.withValues(alpha: 0.3),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+    final color = isFailed ? Colors.redAccent : _colorForExt(ext, scheme);
+    final icon = isFailed ? Icons.error_outline_rounded : _iconForExt(ext, isReceived);
+
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
       ),
+      child: Icon(icon, color: color, size: 20),
     );
   }
+
+  static IconData _iconForExt(String ext, bool isReceived) {
+    switch (ext) {
+      case 'pdf': return Icons.picture_as_pdf_rounded;
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp':
+        return Icons.image_rounded;
+      case 'mp4': case 'mov': case 'avi': case 'mkv':
+        return Icons.videocam_rounded;
+      case 'mp3': case 'aac': case 'flac': case 'wav':
+        return Icons.music_note_rounded;
+      case 'zip': case 'rar': case '7z': case 'tar': case 'gz':
+        return Icons.folder_zip_rounded;
+      case 'apk': return Icons.android_rounded;
+      case 'doc': case 'docx': return Icons.description_rounded;
+      case 'xls': case 'xlsx': return Icons.table_chart_rounded;
+      default:
+        return isReceived ? Icons.download_done_rounded : Icons.upload_rounded;
+    }
+  }
+
+  static Color _colorForExt(String ext, ColorScheme scheme) {
+    switch (ext) {
+      case 'pdf': return const Color(0xFFEF4444);
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp':
+        return const Color(0xFFF59E0B);
+      case 'mp4': case 'mov': case 'avi': case 'mkv':
+        return const Color(0xFF8B5CF6);
+      case 'mp3': case 'aac': case 'flac': case 'wav':
+        return const Color(0xFFEC4899);
+      case 'zip': case 'rar': case '7z': case 'tar': case 'gz':
+        return const Color(0xFF78716C);
+      case 'apk': return const Color(0xFF34D399);
+      default: return scheme.primary;
+    }
+  }
+}
+
+class _TransferDisplayItem {
+  final String name;
+  final String path;
+  final String status;
+  final String direction;
+  final int size;
+  final DateTime? time;
+
+  const _TransferDisplayItem({
+    required this.name,
+    required this.path,
+    required this.status,
+    required this.direction,
+    required this.size,
+    this.time,
+  });
 }

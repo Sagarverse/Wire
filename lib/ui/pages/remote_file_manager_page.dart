@@ -167,11 +167,7 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
 
                       Expanded(
                         child: provider.isLoading && provider.entries.isEmpty
-                            ? ListView.builder(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                itemCount: 8,
-                                itemBuilder: (_, i) => _SkeletonTile(index: i),
-                              )
+                            ? _buildLoadingState(scheme)
                             : provider.error != null
                             ? _buildErrorState(scheme, provider)
                             : provider.entries.isEmpty
@@ -382,6 +378,47 @@ class _RemoteFileManagerPageState extends State<RemoteFileManagerPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState(ColorScheme scheme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Connecting to device...',
+            style: TextStyle(
+              color: scheme.onSurface.withValues(alpha: 0.5),
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Make sure the device is on the same network',
+            style: TextStyle(
+              color: scheme.onSurface.withValues(alpha: 0.3),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back_rounded, size: 18),
+            label: const Text('Go back'),
+          ),
+        ],
       ),
     );
   }

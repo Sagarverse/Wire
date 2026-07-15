@@ -24,9 +24,10 @@ import android.app.NotificationManager
 import android.telephony.PhoneStateListener
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
+import android.net.wifi.WifiManager
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -34,7 +35,7 @@ import java.io.File
 import java.io.FileOutputStream
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 	private var sharedFilesSink: EventChannel.EventSink? = null
 	private var callEventsSink: EventChannel.EventSink? = null
 	private var callStateSink: EventChannel.EventSink? = null
@@ -47,6 +48,7 @@ class MainActivity : FlutterActivity() {
 	private var telephonyManager: TelephonyManager? = null
 	private var lastCallState: Int? = null
 	private var currentRingtone: Ringtone? = null
+	private var multicastLock: WifiManager.MulticastLock? = null
 	private val floatingDockHandler = FloatingDockHandler()
 
 	private val notificationReceiver = object : BroadcastReceiver() {
@@ -291,7 +293,30 @@ class MainActivity : FlutterActivity() {
 
 	override fun onCreate(savedInstanceState: android.os.Bundle?) {
 		super.onCreate(savedInstanceState)
+		acquireMulticastLock()
 		handleShareIntent(intent)
+	}
+
+	private fun acquireMulticastLock() {
+		try {
+			val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+			multicastLock = wifi.createMulticastLock("WireDiscoveryLock")
+			multicastLock?.setReferenceCounted(true)
+			multicastLock?.acquire()
+			android.util.Log.d("WireMainActivity", "MulticastLock acquired")
+		} catch (e: Exception) {
+			android.util.Log.e("WireMainActivity", "Failed to acquire MulticastLock", e)
+		}
+	}
+
+	override fun onDestroy() {
+		multicastLock?.let {
+			if (it.isHeld) {
+				it.release()
+				android.util.Log.d("WireMainActivity", "MulticastLock released")
+			}
+		}
+		super.onDestroy()
 	}
 
 	override fun onNewIntent(intent: Intent) {

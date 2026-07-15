@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../providers/app_state.dart';
 
 class WebSocketService {
   WebSocketService({this.port = 5757});
@@ -182,8 +183,8 @@ class WebSocketService {
     _ensureHeartbeatTimer();
   }
 
-  void disconnect() {
-    disconnectClient();
+  Future<void> disconnect() async {
+    await disconnectClient();
   }
 
   Future<void> stopServer() async {
@@ -365,10 +366,3 @@ class WebSocketService {
   }
 }
 
-enum ConnectionStatus {
-  idle,
-  connecting,
-  connected,
-  disconnected,
-  error
-}
