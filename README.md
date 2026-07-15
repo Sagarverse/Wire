@@ -1,112 +1,71 @@
 # Wire 🔌
 
-**Wire** is a high-performance, cross-platform mobile-to-desktop synchronization application built with Flutter.
+**Wire** is a premium, high-performance, cross-platform mobile-to-desktop synchronization application built with Flutter. It seamlessly connects your Mac and Android devices, offering a professional, beautifully designed experience.
 
-## Getting Started
+## ✨ Highlights
 
-**Prerequisites**: Flutter 3.10+, Dart 3.10+, platform SDKs
+- **Professional UI/UX**: Completely redesigned with a stunning, vibrant teal-cyan aesthetic, glassmorphism elements, and liquid background animations.
+- **Lightning Fast Sync**: Real-time clipboard sharing, remote file management, and instant notifications.
+- **No-Config Pairing**: Simple QR code pairing with automatic local network discovery and fallback routing.
+- **Native Performance**: Highly optimized background services ensure minimal battery drain while keeping devices constantly in sync.
+
+## 🚀 Getting Started
+
+**Prerequisites**: Flutter 3.10+, Dart 3.10+, macOS/Android SDKs
 
 **Quick Start**:
 ```bash
 git clone https://github.com/sagarm/wire.git
 cd wire
 flutter pub get
-flutter run -d macos  # or ios, android
+flutter run -d macos  # Run on Mac
+flutter run -d android # Run on Phone
 ```
 
-## Features
+## 🎛️ Core Features
 
 ### 🔄 Real-Time Sync
-- Clipboard sync with preview and clear history
-- Fast file transfer with speed/ETA metrics
-- WebDAV mount (macOS Finder integration)
-- Notification relay with replies
+- **Clipboard Sync**: Instantly share text between devices. Swipe to delete, tap to copy.
+- **Notification Relay**: Receive and reply to phone notifications directly on your Mac.
+- **Auto Discovery**: Devices automatically find each other on the local network.
 
-### 🎮 Remote Control
-- Keyboard mirror (live text input)
-- Screen mirroring (WebRTC)
-- Trackpad control
-- URL handoff
-- SMS management
+### 🎮 Remote Control & Utility
+- **Find Device**: Ring your misplaced phone directly from your Mac.
+- **Remote File Access**: Browse, download, and manage your phone's files wirelessly.
 
 ### 📊 File Management
-- Complete transfer history
-- Batch retry/remove with undo (5s)
-- Remote file browser
-- Download folder integration
-- Live transfer metrics
+- **High-Speed Transfer**: Send files in batches with live progress indicators.
+- **Transfer History**: Clean, organized history with file type icons and image previews.
+- **macOS Integration**: Drag and drop files seamlessly.
 
-### ⚡ Optimized Performance
-- Connection health metrics
-- Memory/storage efficient
-- Code shrinking & tree-shaking
-- Lazy service loading
-- <2s startup time
+### 🎨 Premium Design
+- **ShareIt + KDE Connect Hybrid**: A beautiful, intuitive dashboard combining the best of both worlds.
+- **Dynamic Theming**: True dark mode with deep navy tones and glowing cyan accents.
+- **Fluid Animations**: Staggered entrances, pulsing connection indicators, and glassmorphic nav bars.
 
-### 🎨 Modern UI
-- Glass morphism design
-- Dark/light themes
-- Searchable quick commands (Cmd+K)
-- Smooth animations
-- Material Design 3
+## 🛠️ Technology Stack
 
-## Technology
+- **Frontend**: Flutter, Provider, Flutter Animate
+- **Networking**: WebSockets, WebRTC (Signaling), Local Network Service Discovery (mDNS)
+- **Background**: Flutter Background Service, Platform Channels (Kotlin/Swift)
+- **Local Data**: SharedPreferences, SQLite
 
-- **Frontend**: Flutter (Dart) + Material 3
-- **Communication**: WebSocket (5757) + HTTP (5758)
-- **Streaming**: WebRTC
-- **Storage**: SQLite
-- **Integration**: Native channels
+## 📱 Background Service (Android)
 
-## Performance
+Wire utilizes a highly optimized foreground service on Android to ensure your clipboard and notifications stay synced even when the app is closed.
+- Features a persistent, actionable notification (Sync, Ring, Stop).
+- Efficient polling mechanisms to bypass Android 10+ clipboard restrictions.
 
-- **App Size**: 180 MB (macOS), 120 MB (Android)
-- **Memory**: 150-500 MB typical
-- **Startup**: <2 seconds
-- **Transfer Speed**: Network-limited, efficient chunking
+## 🤝 Contributing
 
-## Configuration
+Contributions are welcome! Please ensure you:
+- Follow standard Dart formatting (`dart format`).
+- Maintain the premium UI/UX guidelines (use `app_theme.dart` colors and `LiquidBackground`).
+- Test thoroughly on both macOS and Android before submitting a PR.
 
-### Theming
-Edit `lib/ui/theme/app_theme.dart`:
-- Primary: `Color(0xFF245DFF)`
-- Font: SF Pro Text
-- Border radius: 18px
-
-### Optimization
-Edit `lib/config/optimization_config.dart`:
-- Queue size, heartbeat intervals, update frequencies
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Connection fails | Check firewall (5757/5758), manual reconnect |
-| Transfer fails | Verify storage, network, permissions |
-| Mirror doesn't work | Enable Labs → Mirror Features |
-| App slow | Close other apps, check network, restart |
-
-## Roadmap
-
-- [ ] Biometric pairing
-- [ ] Encrypted transfers
-- [ ] Photo auto-sync
-- [ ] Local P2P mode
-- [ ] Hardware acceleration
-
-## Contributing
-
-- Follow Dart conventions (dartfmt)
-- Add tests for features
-- Update docs
-- Test on multiple platforms
-
-## License
+## 📄 License
 
 Personal use license. See LICENSE file.
 
 ---
-
-**Wire** • Seamless Device Sync • Fast • Responsive • Privacy-First
-
-
+**Wire** • Seamless Device Sync • Fast • Beautiful • Privacy-First

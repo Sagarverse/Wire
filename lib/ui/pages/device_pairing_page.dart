@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
@@ -51,89 +52,219 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('Pair device')),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('Pair Device', style: TextStyle(fontWeight: FontWeight.w700)),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: LiquidBackground(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-          children: [
-            _PairingHero(isMac: isMac, onPrimary: () => _openPrimaryPairingSurface(context)),
-            const SizedBox(height: 20),
-            if (!kIsWeb && !isMac) ...[
-              _ScannerCard(
-                controller: _scannerController,
-                onDetected: _handledScan ? null : (raw) => _handleQr(raw),
-              ),
-              const SizedBox(height: 20),
-            ],
-            _SectionCard(
-              title: 'How pairing works',
-              child: Text(
-                isMac
-                    ? 'Keep this QR code open on your Mac, then scan it from the Android phone. The app chooses local Wi-Fi first and falls back to internet automatically.'
-                    : 'Open pairing on the Mac, scan its QR code here, and the link is created automatically. There is no manual network selection in the UI.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurface.withValues(alpha: 0.7),
-                    ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionCard(
-              title: 'Paired devices',
-              child: devices.isEmpty
-                  ? const Text('No paired devices yet.')
-                  : Column(
-                      children: devices
-                          .map(
-                            (device) => _PairedDeviceTile(
-                              device: device,
-                              isActive: device.deviceId == activeId,
-                              onConnect: () => widget.onMakeActive(device),
-                              onForget: () => _forgetDevice(context, appState, device),
+        child: SafeArea(
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    // Hero Section
+                    _buildHeroSection(context, isMac).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1),
+                    const SizedBox(height: 32),
+
+                    // Scanner (Phone only)
+                    if (!kIsWeb && !isMac) ...[
+                      _buildScannerSection(scheme).animate().fadeIn(duration: 500.ms, delay: 200.ms),
+                      const SizedBox(height: 32),
+                    ],
+
+                    // Paired Devices Header
+                    if (devices.isNotEmpty) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Saved Devices',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              color: scheme.onSurface.withValues(alpha: 0.4),
                             ),
-                          )
-                          .toList(),
+                          ),
+                          TextButton(
+                            onPressed: appState.clearAllPairings,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              minimumSize: Size.zero,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            child: const Text('Forget All', style: TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ).animate().fadeIn(duration: 400.ms, delay: 300.ms),
+                      const SizedBox(height: 12),
+                    ],
+                  ]),
+                ),
+              ),
+
+              // Paired Devices List
+              if (devices.isNotEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final device = devices[index];
+                        return _PairedDeviceTile(
+                          device: device,
+                          isActive: device.deviceId == activeId,
+                          onConnect: () => widget.onMakeActive(device),
+                          onForget: () => _forgetDevice(context, appState, device),
+                        ).animate().fadeIn(duration: 400.ms, delay: (400 + (index * 100)).ms).slideX(begin: 0.05);
+                      },
+                      childCount: devices.length,
                     ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  sliver: SliverToBoxAdapter(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 40),
+                        child: Text(
+                          'No saved devices',
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.3),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ).animate().fadeIn(delay: 500.ms),
+                  ),
+                ),
+
+              const SliverPadding(padding: EdgeInsets.only(bottom: 40)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroSection(BuildContext context, bool isMac) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isMac ? Icons.qr_code_2_rounded : Icons.document_scanner_rounded,
+            size: 40,
+            color: scheme.primary,
+          ),
+        ).animate(onPlay: (c) => c.repeat(reverse: true))
+            .scale(duration: 2.seconds, begin: const Offset(1, 1), end: const Offset(1.05, 1.05)),
+        const SizedBox(height: 24),
+        Text(
+          isMac ? 'Connect Your Phone' : 'Scan to Connect',
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          isMac
+              ? 'Open the Wire app on your Android phone and scan the QR code to establish a secure link.'
+              : 'Point your camera at the QR code displayed on your Mac to pair instantly.',
+          style: TextStyle(
+            color: scheme.onSurface.withValues(alpha: 0.6),
+            fontSize: 14,
+            height: 1.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        if (isMac) ...[
+          const SizedBox(height: 32),
+          FilledButton.icon(
+            onPressed: () => _openPrimaryPairingSurface(context),
+            icon: const Icon(Icons.qr_code_rounded),
+            label: const Text('Show QR Code'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              minimumSize: const Size(200, 54),
             ),
-            if (devices.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: appState.clearAllPairings,
-                child: const Text('Forget all devices'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildScannerSection(ColorScheme scheme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.05),
+            blurRadius: 24,
+            spreadRadius: 4,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              MobileScanner(
+                controller: _scannerController,
+                onDetect: (capture) {
+                  if (_handledScan) return;
+                  for (final barcode in capture.barcodes) {
+                    final raw = barcode.rawValue;
+                    if (raw != null && raw.isNotEmpty) {
+                      _handleQr(raw);
+                      return;
+                    }
+                  }
+                },
+              ),
+              // Scanner Overlay overlay
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _ScannerOverlayPainter(color: scheme.primary),
+                ),
               ),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 
   void _openPrimaryPairingSurface(BuildContext context) {
-    final isMac = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
-    if (isMac) {
-      final appState = context.read<AppState>();
-      showDialog(
-        context: context,
-        builder: (_) => QrPairingDialog(
-          deviceId: appState.deviceId,
-          deviceName: appState.deviceName,
-          port: 5757,
-          mode: 'auto',
-        ),
-      );
-      return;
-    }
-
+    final appState = context.read<AppState>();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Scan from phone'),
-        content: const Text('Use the scanner on this page to scan the QR code shown on your Mac.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+      builder: (_) => QrPairingDialog(
+        deviceId: appState.deviceId,
+        deviceName: appState.deviceName,
+        port: 5757,
+        mode: 'auto',
       ),
     );
   }
@@ -161,12 +292,28 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
 
       setState(() => _handledScan = true);
       widget.onConnectToPeer(peer);
+      
       if (mounted) {
+        // Show success and pop back
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connecting to ${peer.deviceName}')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                Text('Paired with ${peer.deviceName}'),
+              ],
+            ),
+            backgroundColor: const Color(0xFF34C759),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
+        Navigator.of(context).pop();
       }
-    } catch (_) {}
+    } catch (_) {
+      // Invalid QR code
+      setState(() => _handledScan = false);
+    }
   }
 
   Future<void> _forgetDevice(BuildContext context, AppState appState, PairedDevice device) async {
@@ -179,141 +326,48 @@ class _DevicePairingPageState extends State<DevicePairingPage> {
   }
 }
 
-class _PairingHero extends StatelessWidget {
-  final bool isMac;
-  final VoidCallback onPrimary;
+// ─── Scanner Overlay Painter ───────────────────────────────────────────────────
 
-  const _PairingHero({
-    required this.isMac,
-    required this.onPrimary,
-  });
+class _ScannerOverlayPainter extends CustomPainter {
+  final Color color;
+
+  _ScannerOverlayPainter({required this.color});
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.84),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isMac ? 'Show QR on the Mac.' : 'Scan QR on the phone.',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            isMac
-                ? 'This Mac acts as the pairing source. Your phone scans the code and the connection is created automatically.'
-                : 'Scan the Mac QR code here. After pairing, clipboard sync, file sharing, remote file access, and ringing are ready.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurface.withValues(alpha: 0.68),
-                ),
-          ),
-          const SizedBox(height: 18),
-          FilledButton(
-            onPressed: onPrimary,
-            child: Text(isMac ? 'Show QR code' : 'Pair with Mac'),
-          ),
-        ],
-      ),
-    );
+    final length = size.width * 0.15;
+    final w = size.width;
+    final h = size.height;
+    const padding = 20.0;
+
+    // Top left
+    canvas.drawLine(Offset(padding, padding + length), const Offset(padding, padding), paint);
+    canvas.drawLine(const Offset(padding, padding), Offset(padding + length, padding), paint);
+
+    // Top right
+    canvas.drawLine(Offset(w - padding - length, padding), Offset(w - padding, padding), paint);
+    canvas.drawLine(Offset(w - padding, padding), Offset(w - padding, padding + length), paint);
+
+    // Bottom left
+    canvas.drawLine(Offset(padding, h - padding - length), Offset(padding, h - padding), paint);
+    canvas.drawLine(Offset(padding, h - padding), Offset(padding + length, h - padding), paint);
+
+    // Bottom right
+    canvas.drawLine(Offset(w - padding, h - padding - length), Offset(w - padding, h - padding), paint);
+    canvas.drawLine(Offset(w - padding - length, h - padding), Offset(w - padding, h - padding), paint);
   }
-}
-
-class _ScannerCard extends StatelessWidget {
-  final MobileScannerController controller;
-  final ValueChanged<String>? onDetected;
-
-  const _ScannerCard({
-    required this.controller,
-    required this.onDetected,
-  });
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.84),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('QR scanner', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: MobileScanner(
-                controller: controller,
-                onDetect: (capture) {
-                  if (onDetected == null) {
-                    return;
-                  }
-                  for (final barcode in capture.barcodes) {
-                    final raw = barcode.rawValue;
-                    if (raw != null && raw.isNotEmpty) {
-                      onDetected!(raw);
-                      return;
-                    }
-                  }
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Point the camera at the QR code displayed by the Mac app.',
-            style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.65)),
-          ),
-        ],
-      ),
-    );
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _SectionCard({
-    required this.title,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.84),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.45)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-}
+// ─── Paired Device Tile ────────────────────────────────────────────────────────
 
 class _PairedDeviceTile extends StatelessWidget {
   final PairedDevice device;
@@ -330,16 +384,90 @@ class _PairedDeviceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(device.osType == 'macos' ? Icons.laptop_mac_rounded : Icons.phone_android_rounded),
-      title: Text(device.name),
-      subtitle: Text(isActive ? 'Active device' : 'Ready to reconnect'),
-      trailing: Wrap(
-        spacing: 8,
+    final scheme = Theme.of(context).colorScheme;
+    final isMac = device.osType == 'macos';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isActive 
+              ? scheme.primary.withValues(alpha: 0.4) 
+              : scheme.outline.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
         children: [
-          TextButton(onPressed: onConnect, child: const Text('Connect')),
-          TextButton(onPressed: onForget, child: const Text('Forget')),
+          // Device Avatar
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isMac ? Icons.laptop_mac_rounded : Icons.phone_android_rounded,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 16),
+          
+          // Device Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  device.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: isActive ? const Color(0xFF34C759) : scheme.onSurface.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isActive ? 'Active' : 'Offline',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Actions
+          if (!isActive)
+            IconButton(
+              onPressed: onConnect,
+              icon: const Icon(Icons.link_rounded),
+              style: IconButton.styleFrom(
+                backgroundColor: scheme.primary.withValues(alpha: 0.1),
+                foregroundColor: scheme.primary,
+              ),
+            ),
+          if (!isActive) const SizedBox(width: 8),
+          IconButton(
+            onPressed: onForget,
+            icon: const Icon(Icons.delete_outline_rounded),
+            style: IconButton.styleFrom(
+              foregroundColor: Colors.redAccent.withValues(alpha: 0.8),
+            ),
+          ),
         ],
       ),
     );

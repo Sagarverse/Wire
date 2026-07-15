@@ -797,71 +797,88 @@ class _MobileLayout extends StatelessWidget {
           onPageChanged: onPageChanged,
           children: pages,
         ),
-        // Glassmorphism navigation bar
+        // Premium floating dock
         Positioned(
-          left: 16,
-          right: 16,
-          bottom: bottomPadding + 6,
+          left: 24,
+          right: 24,
+          bottom: bottomPadding + 10,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(24),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: Container(
+                height: 60,
                 decoration: BoxDecoration(
                   color: isDark
-                      ? const Color(0xFF0D1424).withValues(alpha: 0.88)
-                      : Colors.white.withValues(alpha: 0.88),
-                  borderRadius: BorderRadius.circular(18),
+                      ? const Color(0xFF0D1220).withValues(alpha: 0.92)
+                      : Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(24),
                   border: Border.all(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.06)
-                        : Colors.black.withValues(alpha: 0.05),
+                        : Colors.black.withValues(alpha: 0.04),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
-                      blurRadius: 16,
-                      offset: const Offset(0, 2),
+                      color: isDark
+                          ? scheme.primary.withValues(alpha: 0.06)
+                          : Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 24,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: NavigationBar(
-                  selectedIndex: selectedIndex,
-                  onDestinationSelected: onDestinationSelected,
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  height: 52,
-                  labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-                  indicatorColor: scheme.primary.withValues(alpha: isDark ? 0.18 : 0.1),
-                  indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  destinations: [
-                    NavigationDestination(
-                      icon: _NavIconWithDot(
-                        icon: Icons.dashboard_outlined,
-                        status: connectionStatus,
-                        showDot: true,
+                child: Stack(
+                  children: [
+                    // Animated glowing pill indicator
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 280),
+                      curve: Curves.easeOutCubic,
+                      left: _pillLeft(selectedIndex, context),
+                      top: 8,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        width: _pillWidth(context),
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: isDark ? 0.15 : 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: scheme.primary.withValues(alpha: 0.15),
+                          ),
+                        ),
                       ),
-                      selectedIcon: _NavIconWithDot(
-                        icon: Icons.dashboard_rounded,
-                        status: connectionStatus,
-                        showDot: true,
-                      ),
-                      label: 'Dashboard',
                     ),
-                    const NavigationDestination(
-                      icon: Icon(Icons.folder_outlined),
-                      selectedIcon: Icon(Icons.folder_rounded),
-                      label: 'Files',
-                    ),
-                    const NavigationDestination(
-                      icon: Icon(Icons.content_paste_outlined),
-                      selectedIcon: Icon(Icons.content_paste_rounded),
-                      label: 'Clipboard',
-                    ),
-                    const NavigationDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings_rounded),
-                      label: 'Settings',
+                    // Tab icons
+                    Row(
+                      children: [
+                        _DockTab(
+                          icon: Icons.dashboard_outlined,
+                          activeIcon: Icons.dashboard_rounded,
+                          isActive: selectedIndex == 0,
+                          connectionStatus: connectionStatus,
+                          onTap: () => onDestinationSelected(0),
+                        ),
+                        _DockTab(
+                          icon: Icons.folder_outlined,
+                          activeIcon: Icons.folder_rounded,
+                          isActive: selectedIndex == 1,
+                          onTap: () => onDestinationSelected(1),
+                        ),
+                        _DockTab(
+                          icon: Icons.content_paste_outlined,
+                          activeIcon: Icons.content_paste_rounded,
+                          isActive: selectedIndex == 2,
+                          onTap: () => onDestinationSelected(2),
+                        ),
+                        _DockTab(
+                          icon: Icons.settings_outlined,
+                          activeIcon: Icons.settings_rounded,
+                          isActive: selectedIndex == 3,
+                          onTap: () => onDestinationSelected(3),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -871,6 +888,16 @@ class _MobileLayout extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  double _pillWidth(BuildContext context) {
+    final totalWidth = MediaQuery.of(context).size.width - 48; // 24 left + 24 right
+    return totalWidth / 4;
+  }
+
+  double _pillLeft(int index, BuildContext context) {
+    final totalWidth = MediaQuery.of(context).size.width - 48;
+    return (totalWidth / 4) * index;
   }
 }
 
@@ -922,49 +949,86 @@ class _ConnectionDot extends StatelessWidget {
   }
 }
 
-// Nav icon with a connection status dot
-class _NavIconWithDot extends StatelessWidget {
+// Premium dock tab with animated icon and connection dot
+class _DockTab extends StatelessWidget {
   final IconData icon;
-  final ConnectionStatus status;
-  final bool showDot;
+  final IconData activeIcon;
+  final bool isActive;
+  final ConnectionStatus? connectionStatus;
+  final VoidCallback onTap;
 
-  const _NavIconWithDot({
+  const _DockTab({
     required this.icon,
-    required this.status,
-    this.showDot = false,
+    required this.activeIcon,
+    required this.isActive,
+    this.connectionStatus,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isConnected = status == ConnectionStatus.connected || status == ConnectionStatus.syncing;
-    final isConnecting = status == ConnectionStatus.connecting;
+    final scheme = Theme.of(context).colorScheme;
+    final isConnected = connectionStatus == ConnectionStatus.connected ||
+        connectionStatus == ConnectionStatus.syncing;
+    final isConnecting = connectionStatus == ConnectionStatus.connecting;
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(icon),
-        if (showDot)
-          Positioned(
-            right: -3,
-            top: -3,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: isConnected
-                    ? const Color(0xFF34C759)
-                    : isConnecting
-                        ? const Color(0xFFFF9F0A)
-                        : Colors.grey,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.surface,
-                  width: 1.5,
-                ),
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          height: 60,
+          child: Center(
+            child: AnimatedScale(
+              scale: isActive ? 1.0 : 0.85,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      isActive ? activeIcon : icon,
+                      key: ValueKey(isActive),
+                      size: 22,
+                      color: isActive
+                          ? scheme.primary
+                          : scheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  // Connection dot (only on dashboard tab)
+                  if (connectionStatus != null)
+                    Positioned(
+                      right: -4,
+                      top: -4,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: isConnected
+                              ? const Color(0xFF34C759)
+                              : isConnecting
+                                  ? const Color(0xFFFF9F0A)
+                                  : Colors.grey.withValues(alpha: 0.5),
+                          shape: BoxShape.circle,
+                          boxShadow: isConnected
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFF34C759).withValues(alpha: 0.4),
+                                    blurRadius: 4,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }
