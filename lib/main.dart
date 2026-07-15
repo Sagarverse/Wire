@@ -590,24 +590,20 @@ class _WireHomePageState extends State<WireHomePage> {
                     connectionStatus: appState.connectionStatus,
                     pages: pages,
                   ),
-                // Received file popup overlay
+                // Quick Look toast for received file
                 if (_pendingPopup != null)
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 400),
-                          child: ReceivedFilePopup(
-                            progress: _pendingPopup!,
-                            onDismiss: () {
-                              setState(() {
-                                _pendingPopup = null;
-                              });
-                            },
-                          ),
-                        ),
-                      ),
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: MediaQuery.of(context).padding.bottom + 80,
+                    child: _QuickLookToast(
+                      progress: _pendingPopup!,
+                      onDismiss: () => setState(() => _pendingPopup = null),
+                      onOpen: () {
+                        final path = _pendingPopup!.path;
+                        setState(() => _pendingPopup = null);
+                        appState.openFileLocation(path);
+                      },
                     ),
                   ),
               ],
@@ -1030,6 +1026,256 @@ class _DockTab extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─── Quick Look Toast ──────────────────────────────────────────────────────────
+
+class _QuickLookToast extends StatefulWidget {
+  final FileReceiveProgress progress;
+  final VoidCallback onDismiss;
+  final VoidCallback onOpen;
+
+  const _QuickLookToast({
+    required this.progress,
+    required this.onDismiss,
+    required this.onOpen,
+  });
+
+  @override
+  State<_QuickLookToast> createState() => _QuickLookToastState();
+}
+
+class _QuickLookToastState extends State<_QuickLookToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    )..forward();
+
+    // Auto-dismiss after 8 seconds
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) _dismiss();
+    });
+  }
+
+  void _dismiss() {
+    _anim.reverse().then((_) {
+      if (mounted) widget.onDismiss();
+    });
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ext = widget.progress.name.split('.').last.toLowerCase();
+    final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].contains(ext);
+
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, 1.5),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic)),
+      child: FadeTransition(
+        opacity: _anim,
+        child: GestureDetector(
+          onVerticalDragEnd: (d) {
+            if (d.primaryVelocity != null && d.primaryVelocity! > 200) _dismiss();
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF141A26).withValues(alpha: 0.96)
+                  : Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.05),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                  blurRadius: 32,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      // File preview thumbnail
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          width: 52,
+                          height: 52,
+                          child: isImage
+                              ? Image.file(
+                                  File(widget.progress.path),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      _buildFileIcon(ext, scheme),
+                                )
+                              : _buildFileIcon(ext, scheme),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+
+                      // File info
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 14,
+                                  color: const Color(0xFF34C759),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'File Received',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF34C759),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.progress.name,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: scheme.onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatSize(widget.progress.total),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: scheme.onSurface.withValues(alpha: 0.4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Actions
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: widget.onOpen,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: scheme.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'Open',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: _dismiss,
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: scheme.onSurface.withValues(alpha: 0.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFileIcon(String ext, ColorScheme scheme) {
+    final color = _colorForExt(ext, scheme);
+    return Container(
+      color: color.withValues(alpha: 0.1),
+      child: Center(
+        child: Icon(_iconForExt(ext), color: color, size: 24),
+      ),
+    );
+  }
+
+  static IconData _iconForExt(String ext) {
+    switch (ext) {
+      case 'pdf': return Icons.picture_as_pdf_rounded;
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp':
+        return Icons.image_rounded;
+      case 'mp4': case 'mov': case 'avi': case 'mkv':
+        return Icons.videocam_rounded;
+      case 'mp3': case 'aac': case 'flac': case 'wav':
+        return Icons.music_note_rounded;
+      case 'zip': case 'rar': case '7z': case 'tar': case 'gz':
+        return Icons.folder_zip_rounded;
+      case 'apk': return Icons.android_rounded;
+      default: return Icons.insert_drive_file_rounded;
+    }
+  }
+
+  static Color _colorForExt(String ext, ColorScheme scheme) {
+    switch (ext) {
+      case 'pdf': return const Color(0xFFEF4444);
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp':
+        return const Color(0xFFF59E0B);
+      case 'mp4': case 'mov': case 'avi': case 'mkv':
+        return const Color(0xFF8B5CF6);
+      case 'mp3': case 'aac': case 'flac': case 'wav':
+        return const Color(0xFFEC4899);
+      case 'zip': case 'rar': case '7z': case 'tar': case 'gz':
+        return const Color(0xFF78716C);
+      case 'apk': return const Color(0xFF34D399);
+      default: return scheme.primary;
+    }
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }
 
