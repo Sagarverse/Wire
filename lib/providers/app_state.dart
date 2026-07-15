@@ -452,12 +452,14 @@ class AppState extends ChangeNotifier {
     });
 
     fileTransferService.receiveProgress.listen((progress) {
-       final service = FlutterBackgroundService();
-       service.invoke('updateProgress', {
-         'content': 'Receiving ${progress.name}...',
-         'progress': progress.received,
-         'total': progress.total,
-       });
+       if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+         final service = FlutterBackgroundService();
+         service.invoke('updateProgress', {
+           'content': 'Receiving ${progress.name}...',
+           'progress': progress.received,
+           'total': progress.total,
+         });
+       }
     });
 
     if (_discoveryEnabled) {
@@ -1490,22 +1492,26 @@ class AppState extends ChangeNotifier {
           host: active.lastIp,
           port: active.filePort,
           onProgress: (sent, total, currentFile) {
-            final service = FlutterBackgroundService();
-            service.invoke('updateProgress', {
-              'content': 'Sending files...',
-              'progress': sent,
-              'total': total,
-            });
+            if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+              final service = FlutterBackgroundService();
+              service.invoke('updateProgress', {
+                'content': 'Sending files...',
+                'progress': sent,
+                'total': total,
+              });
+            }
             _scheduleNotify();
           },
         );
         
-        final service = FlutterBackgroundService();
-        service.invoke('updateProgress', {
-          'content': 'Transfer Complete',
-          'progress': 100,
-          'total': 100,
-        });
+        if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+          final service = FlutterBackgroundService();
+          service.invoke('updateProgress', {
+            'content': 'Transfer Complete',
+            'progress': 100,
+            'total': 100,
+          });
+        }
 
         notificationsService.showNotification(
           title: 'Transfer Complete',
@@ -1653,12 +1659,14 @@ class AppState extends ChangeNotifier {
       startTime: DateTime.now(),
     ));
     
-    final service = FlutterBackgroundService();
-    service.invoke('updateProgress', {
-      'content': 'Sending $name via Internet...',
-      'progress': 0,
-      'total': size,
-    });
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+      final service = FlutterBackgroundService();
+      service.invoke('updateProgress', {
+        'content': 'Sending $name via Internet...',
+        'progress': 0,
+        'total': size,
+      });
+    }
     
     sendMessage({
       'type': 'p2p_transfer_start',
@@ -1676,11 +1684,13 @@ class AppState extends ChangeNotifier {
       sent += chunk.length;
       provider?.updateTransferProgress(transferId, sent / size, sent);
       
-      service.invoke('updateProgress', {
-         'content': 'Sending $name...',
-         'progress': sent,
-         'total': size,
-      });
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+        FlutterBackgroundService().invoke('updateProgress', {
+           'content': 'Sending $name...',
+           'progress': sent,
+           'total': size,
+        });
+      }
 
       // In a real high-throughput scenario, we'd wait for an ACK or throttle
       // But WebRTC data channel handles some flow control
@@ -1690,11 +1700,13 @@ class AppState extends ChangeNotifier {
     sendMessage({'type': 'p2p_transfer_end'});
     provider?.updateTransferStatus(transferId, 'complete');
     
-    service.invoke('updateProgress', {
-       'content': 'Transfer Complete',
-       'progress': 100,
-       'total': 100,
-    });
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+      FlutterBackgroundService().invoke('updateProgress', {
+         'content': 'Transfer Complete',
+         'progress': 100,
+         'total': 100,
+      });
+    }
     _scheduleNotify();
   }
 
